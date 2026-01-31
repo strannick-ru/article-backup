@@ -15,6 +15,7 @@ site/public/
 site/resources/
 
 # IDE
+.claude/
 .idea/
 .vscode/
 *.swp

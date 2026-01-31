@@ -3,6 +3,7 @@
 """CLI точка входа для бэкапа статей."""
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -11,6 +12,32 @@ from src.database import Database
 from src.utils import is_post_url, parse_post_url
 from src.sponsr import SponsorDownloader
 from src.boosty import BoostyDownloader
+
+
+def ensure_site_content_link(config: Config):
+    """Создаёт симлинк site/content → output_dir."""
+    site_content = Path('site/content')
+
+    # Если уже правильный симлинк — ничего не делаем
+    if site_content.is_symlink():
+        current_target = site_content.resolve()
+        expected_target = config.output_dir.resolve()
+        if current_target == expected_target:
+            return
+        # Симлинк на другую директорию — удаляем
+        site_content.unlink()
+    elif site_content.exists():
+        # Это реальная директория — не трогаем
+        print(f"Предупреждение: site/content существует и не является симлинком")
+        return
+
+    # Создаём симлинк
+    site_dir = Path('site')
+    if site_dir.exists():
+        # Относительный путь от site/ к output_dir
+        rel_path = os.path.relpath(config.output_dir.resolve(), site_dir.resolve())
+        site_content.symlink_to(rel_path)
+        print(f"Симлинк: site/content → {rel_path}")
 
 
 def get_downloader(platform: str, config: Config, source: Source, db: Database):
@@ -85,20 +112,21 @@ def main():
 
     # Создаём директорию и базу
     config.output_dir.mkdir(parents=True, exist_ok=True)
-    db = Database(config.output_dir / 'index.db')
 
-    # Выполняем команду
-    if args.url:
-        if not is_post_url(args.url):
-            print(f"Ошибка: неверный URL поста: {args.url}")
-            sys.exit(1)
-        download_single_post(args.url, config, db)
-    else:
-        if not config.sources:
-            print("Нет источников в конфиге. Добавьте секцию 'sources'.")
-            sys.exit(1)
-        sync_all(config, db)
+    with Database(config.output_dir / 'index.db') as db:
+        # Выполняем команду
+        if args.url:
+            if not is_post_url(args.url):
+                print(f"Ошибка: неверный URL поста: {args.url}")
+                sys.exit(1)
+            download_single_post(args.url, config, db)
+        else:
+            if not config.sources:
+                print("Нет источников в конфиге. Добавьте секцию 'sources'.")
+                sys.exit(1)
+            sync_all(config, db)
 
+    ensure_site_content_link(config)
     print("\nГотово!")
 
 

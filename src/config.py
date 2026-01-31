@@ -54,6 +54,7 @@ def load_config(config_path: Path) -> Config:
             platform=src['platform'],
             author=src['author'],
             download_assets=src.get('download_assets', True),
+            display_name=src.get('display_name'),
         ))
 
     return Config(output_dir=output_dir, auth=auth, sources=sources)
@@ -66,13 +67,17 @@ def _to_path(value: str | None) -> Path | None:
 
 def load_cookie(cookie_file: Path | None) -> str:
     """Загружает cookie из файла."""
-    if not cookie_file or not cookie_file.exists():
+    if cookie_file is None:
+        raise FileNotFoundError("Cookie file path not specified")
+    if not cookie_file.exists():
         raise FileNotFoundError(f"Cookie file not found: {cookie_file}")
     return cookie_file.read_text(encoding='utf-8').strip()
 
 
 def load_auth_header(auth_file: Path | None) -> str:
     """Загружает Authorization header из файла."""
-    if not auth_file or not auth_file.exists():
+    if auth_file is None:
+        raise FileNotFoundError("Auth file path not specified")
+    if not auth_file.exists():
         raise FileNotFoundError(f"Auth file not found: {auth_file}")
     return auth_file.read_text(encoding='utf-8').strip()

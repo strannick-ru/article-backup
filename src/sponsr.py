@@ -13,6 +13,16 @@ from .config import Config, Source, load_cookie
 from .database import Database
 from .downloader import BaseDownloader, Post
 
+# Паттерны для преобразования embed URL в watch URL
+VIDEO_EMBED_PATTERNS = [
+    (r'rutube\.ru/play/embed/([a-f0-9]+)', lambda m: f'https://rutube.ru/video/{m.group(1)}/'),
+    (r'youtube\.com/embed/([^/?]+)', lambda m: f'https://youtube.com/watch?v={m.group(1)}'),
+    (r'youtu\.be/([^/?]+)', lambda m: f'https://youtube.com/watch?v={m.group(1)}'),
+    (r'player\.vimeo\.com/video/(\d+)', lambda m: f'https://vimeo.com/{m.group(1)}'),
+    (r'ok\.ru/videoembed/(\d+)', lambda m: f'https://ok.ru/video/{m.group(1)}'),
+    (r'vk\.com/video_ext\.php\?.*?oid=(-?\d+).*?id=(\d+)', lambda m: f'https://vk.com/video{m.group(1)}_{m.group(2)}'),
+]
+
 
 class SponsorDownloader(BaseDownloader):
     """Загрузчик статей с Sponsr.ru"""
@@ -81,28 +91,60 @@ class SponsorDownloader(BaseDownloader):
 
     def fetch_post(self, post_id: str) -> Post | None:
         """Получает один пост по ID."""
-        # Сначала ищем в списке постов
-        posts = self.fetch_posts_list()
-        for raw_post in posts:
-            if str(raw_post.get('post_id')) == post_id:
-                return self._parse_post(raw_post)
+        # Сначала пробуем получить напрямую со страницы поста
+        post = self._fetch_post_from_page(post_id)
+        if post:
+            return post
 
-        # Если не нашли — пробуем получить напрямую
-        return self._fetch_post_by_url(post_id)
+        # Fallback: ищем в API постранично (без загрузки всего списка)
+        return self._find_post_in_api(post_id)
 
-    def _fetch_post_by_url(self, post_id: str) -> Post | None:
-        """Получает пост по URL страницы."""
-        # Пробуем найти URL поста через API
+    def _fetch_post_from_page(self, post_id: str) -> Post | None:
+        """Получает пост напрямую со страницы."""
+        # URL формат: https://sponsr.ru/{author}/{post_id}/...
+        url = f"https://sponsr.ru/{self.source.author}/{post_id}/"
+        try:
+            response = self.session.get(url, timeout=self.TIMEOUT)
+            response.raise_for_status()
+
+            soup = BeautifulSoup(response.text, 'lxml')
+            data_tag = soup.find('script', id='__NEXT_DATA__')
+            if not data_tag:
+                return None
+
+            data = json.loads(data_tag.string)
+            post_data = data.get('props', {}).get('pageProps', {}).get('post')
+            if not post_data:
+                return None
+
+            return self._parse_post(post_data)
+        except requests.RequestException:
+            return None
+
+    def _find_post_in_api(self, post_id: str) -> Post | None:
+        """Ищет пост в API постранично (останавливается при нахождении)."""
         project_id = self._get_project_id()
-        api_url = f"https://sponsr.ru/project/{project_id}/more-posts/?offset=0"
+        offset = 0
 
-        response = self.session.get(api_url, timeout=self.TIMEOUT)
-        response.raise_for_status()
+        while True:
+            api_url = f"https://sponsr.ru/project/{project_id}/more-posts/?offset={offset}"
+            try:
+                response = self.session.get(api_url, timeout=self.TIMEOUT)
+                response.raise_for_status()
 
-        posts = response.json().get("response", {}).get("rows", [])
-        for raw_post in posts:
-            if str(raw_post.get('post_id')) == post_id:
-                return self._parse_post(raw_post)
+                data = response.json().get("response", {})
+                posts_chunk = data.get("rows", [])
+
+                if not posts_chunk:
+                    break
+
+                for raw_post in posts_chunk:
+                    if str(raw_post.get('post_id')) == post_id:
+                        return self._parse_post(raw_post)
+
+                offset += len(posts_chunk)
+            except requests.RequestException:
+                break
 
         return None
 
@@ -164,6 +206,31 @@ class SponsorDownloader(BaseDownloader):
 
         return assets
 
+    def _parse_video_url(self, embed_src: str) -> str | None:
+        """Преобразует embed URL в watch URL."""
+        for pattern, converter in VIDEO_EMBED_PATTERNS:
+            match = re.search(pattern, embed_src)
+            if match:
+                return converter(match)
+        # Fallback: вернуть оригинальный URL если не распознан
+        if embed_src and ('video' in embed_src or 'embed' in embed_src):
+            return embed_src
+        return None
+
+    def _replace_video_embeds(self, html_content: str) -> str:
+        """Заменяет iframe/embed видео на markdown-ссылки."""
+        soup = BeautifulSoup(html_content, 'lxml')
+
+        for iframe in soup.find_all(['iframe', 'embed']):
+            src = iframe.get('src', '')
+            video_url = self._parse_video_url(src)
+            if video_url:
+                placeholder = soup.new_tag('p')
+                placeholder.string = f'📹 Видео: {video_url}'
+                iframe.replace_with(placeholder)
+
+        return str(soup)
+
     def _to_markdown(self, post: Post, asset_map: dict[str, str]) -> str:
         """Конвертирует HTML в Markdown."""
         if not post.content_html:
@@ -173,6 +240,9 @@ class SponsorDownloader(BaseDownloader):
         html = post.content_html
         for original_url, local_filename in asset_map.items():
             html = html.replace(original_url, f"assets/{local_filename}")
+
+        # Заменяем iframe/embed видео на markdown-ссылки
+        html = self._replace_video_embeds(html)
 
         # Конвертируем HTML в Markdown
         h2t = html2text.HTML2Text()

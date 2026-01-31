@@ -1,0 +1,148 @@
+/* static/css/reader.css */
+
+/* ===== PT Serif (вариант A — через Google Fonts) ===== */
+/* Если хочешь без внешних запросов — см. вариант B ниже. */
+@import url("https://fonts.googleapis.com/css2?family=PT+Serif:wght@400;700&display=swap");
+
+/* ===== Gruvbox-ish palette (dark soft) ===== */
+:root{
+  color-scheme: dark;
+
+  --bg:        #32302f; /* dark0_soft */
+  --bg2:       #3c3836; /* dark1 */
+  --fg:        #ebdbb2; /* light0 */
+  --fg2:       #d5c4a1; /* light2 */
+  --muted:     #a89984; /* light4 */
+  --comment:   #928374; /* gray */
+  --border:    #504945; /* dark2 */
+
+  --accent:    #d79921; /* yellow */
+  --link:      #83a598; /* blue */
+  --visited:   #b16286; /* purple */
+
+  --code-bg:   #1d2021; /* dark0_hard-ish */
+}
+
+/* (опционально) Светлая тема, если браузер просит light */
+@media (prefers-color-scheme: light) {
+  :root{
+    color-scheme: light;
+
+    --bg:      #fbf1c7; /* light0 */
+    --bg2:     #f2e5bc; /* light1 */
+    --fg:      #3c3836; /* dark1 */
+    --fg2:     #504945; /* dark2 */
+    --muted:   #665c54; /* dark4 */
+    --comment: #7c6f64; /* gray */
+
+    --border:  #d5c4a1; /* light2 */
+    --accent:  #b57614; /* yellow-ish */
+    --link:    #076678; /* blue */
+    --visited: #8f3f71; /* purple */
+
+    --code-bg: #ebdbb2; /* light-ish */
+  }
+}
+
+/* ===== Base typography for reading ===== */
+html { -webkit-text-size-adjust: 100%; }
+body{
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+
+  max-width: 72ch;
+  padding: 2.25rem 1.25rem;
+  margin-left: auto;
+  margin-right: auto;
+
+  font-family: "PT Serif", Georgia, serif;
+  font-size: 18px;
+  line-height: 1.75;
+
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (min-width: 900px){
+  body{ font-size: 19px; }
+}
+
+::selection{
+  background: var(--accent);
+  color: var(--bg);
+}
+
+/* Headings */
+h1, h2, h3, h4{
+  line-height: 1.2;
+  margin: 2.0rem 0 0.75rem;
+  color: var(--fg);
+}
+h1{ margin-top: 0.5rem; }
+
+/* Paragraph rhythm */
+p{ margin: 0 0 1rem; }
+ul, ol{ margin: 0 0 1rem; padding-left: 1.25rem; }
+li{ margin: 0.25rem 0; }
+
+/* Links */
+a{ color: var(--link); text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
+a:visited{ color: var(--visited); }
+a:hover{ color: var(--accent); }
+
+/* Meta, dates, secondary text */
+.meta, .date{
+  color: var(--muted);
+  font-size: 0.95em;
+}
+
+/* Images */
+img{ max-width: 100%; height: auto; border-radius: 8px; }
+
+/* Quotes */
+blockquote{
+  margin: 1.25rem 0;
+  padding: 0.85rem 1rem;
+  background: var(--bg2);
+  border-left: 4px solid var(--accent);
+  color: var(--fg2);
+}
+
+/* Code */
+code, pre{
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 0.92em;
+}
+code{
+  background: var(--code-bg);
+  padding: 0.15em 0.35em;
+  border-radius: 6px;
+}
+pre{
+  background: var(--code-bg);
+  padding: 1rem;
+  border-radius: 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+}
+pre code{
+  background: transparent;
+  padding: 0;
+}
+
+/* Separators & tables (если встретятся) */
+hr{
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 2rem 0;
+}
+table{
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1.25rem 0;
+}
+th, td{
+  border: 1px solid var(--border);
+  padding: 0.5rem 0.6rem;
+}

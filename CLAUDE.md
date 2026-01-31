@@ -23,14 +23,22 @@ src/
   - `sync()` — полная синхронизация автора
   - `download_single()` — один пост по ID
   - `_save_post()` — сохранение на диск + запись в БД
-  - `_download_assets()` — параллельное скачивание медиа (ThreadPoolExecutor)
+  - `_download_assets()` — параллельное скачивание медиа (ThreadPoolExecutor) с retry
+  - `_deduplicate_filename()` — генерация уникальных имён файлов при коллизии
 
 - `Post` — dataclass с полями: post_id, title, content_html, post_date, source_url, tags, assets
+
+- `Database` — SQLite wrapper с connection pooling
+  - Использует один connection на сессию
+  - Поддерживает context manager (`with Database(...) as db:`)
+
+- `retry_request()` — функция для retry с exponential backoff (3 попытки, задержка 1-30 сек)
 
 ## API платформ
 
 **Sponsr:**
 - Список постов: `GET /project/{project_id}/more-posts/?offset={n}`
+- Один пост: парсинг `__NEXT_DATA__` со страницы `/{author}/{post_id}/`
 - project_id из `__NEXT_DATA__` на странице проекта
 - Авторизация: Cookie header
 
@@ -45,6 +53,25 @@ src/
 2. Заголовки могут содержать кавычки — экранируем для YAML
 3. Внутренние ссылки между статьями — фиксим после скачивания всех постов
 4. frontmatter не должен модифицироваться при фиксе ссылок
+5. Сетевые запросы используют retry с exponential backoff (кроме 4xx ошибок)
+6. При коллизии имён файлов добавляется хеш URL
+7. Встроенные видео (iframe/embed) в Sponsr заменяются на markdown-ссылки перед конвертацией html2text
+
+## Hugo-сайт
+
+```
+site/
+├── hugo.toml           → конфиг Hugo (relativeURLs = true)
+├── build.sh            → сборка + копирование CSS в папки авторов
+├── static/css/         → стили (reader.css)
+├── layouts/_default/   → шаблоны (single.html, list.html, baseof.html)
+└── public/             → сгенерированный сайт
+```
+
+- `backup.py` автоматически создаёт симлинк `site/content → output_dir`
+- `build.sh` — собирает Hugo и копирует CSS в каждую папку автора для автономной раздачи через субдомены
+- Относительные URL включены — сайт работает из любой директории
+- RSS генерируется для каждого автора: `/{platform}/{author}/index.xml`
 
 ## Соглашения
 
@@ -65,3 +92,13 @@ src/
 
 **Изменить фильтрацию assets:**
 → `utils.py`: `ALLOWED_EXTENSIONS`, `should_download_asset()`
+
+**Настроить retry параметры:**
+→ `downloader.py`: `retry_request()` — параметры max_retries, base_delay, max_delay, backoff_factor
+
+**Изменить шаблоны Hugo:**
+→ `site/layouts/_default/` — single.html (статья), list.html (списки), baseof.html (базовый)
+→ Все ссылки должны использовать `relURL` для относительных путей
+
+**Добавить CSS для автора:**
+→ Создать `backup/{platform}/{author}/css/author.css` с кастомными переменными

@@ -1,0 +1,17 @@
+baseURL = 'http://localhost:1313/'
+languageCode = 'ru'
+title = 'Бэкап статей'
+relativeURLs = true
+
+[markup.goldmark.renderer]
+  unsafe = true
+
+[taxonomies]
+  tag = 'tags'
+
+[outputs]
+  home = ["HTML"]
+  section = ["HTML", "RSS"]
+
+[services.rss]
+  limit = 50

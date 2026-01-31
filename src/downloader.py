@@ -1,12 +1,14 @@
 # src/downloader.py
 """Базовый класс загрузчика и общая логика."""
 
+import hashlib
 import json
 import re
+import time
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
@@ -23,6 +25,43 @@ from .utils import (
     sanitize_filename,
     extract_internal_links,
 )
+
+
+def retry_request(
+    func,
+    max_retries: int = 3,
+    base_delay: float = 1.0,
+    max_delay: float = 30.0,
+    backoff_factor: float = 2.0,
+):
+    """
+    Выполняет функцию с retry и exponential backoff.
+
+    Args:
+        func: Функция для выполнения (должна возвращать Response или вызывать исключение)
+        max_retries: Максимальное количество попыток
+        base_delay: Начальная задержка в секундах
+        max_delay: Максимальная задержка в секундах
+        backoff_factor: Множитель для увеличения задержки
+    """
+    last_exception = None
+    delay = base_delay
+
+    for attempt in range(max_retries):
+        try:
+            return func()
+        except requests.RequestException as e:
+            last_exception = e
+            # Не ретраим 4xx ошибки (кроме 429 Too Many Requests)
+            if hasattr(e, 'response') and e.response is not None:
+                if 400 <= e.response.status_code < 500 and e.response.status_code != 429:
+                    raise
+
+            if attempt < max_retries - 1:
+                time.sleep(delay)
+                delay = min(delay * backoff_factor, max_delay)
+
+    raise last_exception
 
 
 @dataclass
@@ -160,7 +199,7 @@ class BaseDownloader(ABC):
             source_url=post.source_url,
             local_path=str(post_dir),
             tags=json.dumps(post.tags, ensure_ascii=False),
-            synced_at=datetime.utcnow().isoformat(),
+            synced_at=datetime.now(timezone.utc).isoformat(),
         )
         self.db.add_post(record)
         print(f"  ✓ {post.title}")
@@ -207,6 +246,7 @@ class BaseDownloader(ABC):
         Возвращает маппинг {original_url: local_filename}.
         """
         asset_map = {}
+        used_filenames: set[str] = set()
 
         def download_one(asset: dict) -> tuple[str, str | None]:
             url = asset["url"]
@@ -216,8 +256,12 @@ class BaseDownloader(ABC):
                 if ext and ext not in ALLOWED_EXTENSIONS:
                     return url, None
 
-                response = self.session.get(url, stream=True, timeout=self.TIMEOUT)
-                response.raise_for_status()
+                def do_request():
+                    resp = self.session.get(url, stream=True, timeout=self.TIMEOUT)
+                    resp.raise_for_status()
+                    return resp
+
+                response = retry_request(do_request, max_retries=3)
 
                 content_type = response.headers.get('Content-Type', '')
 
@@ -243,9 +287,19 @@ class BaseDownloader(ABC):
             for future in as_completed(futures):
                 url, filename = future.result()
                 if filename:
+                    # Дедупликация имён файлов
+                    if filename in used_filenames:
+                        filename = self._deduplicate_filename(filename, url)
+                    used_filenames.add(filename)
                     asset_map[url] = filename
 
         return asset_map
+
+    def _deduplicate_filename(self, filename: str, url: str) -> str:
+        """Создаёт уникальное имя файла добавляя хеш URL."""
+        path = Path(filename)
+        url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+        return f"{path.stem}-{url_hash}{path.suffix}"
 
     def _make_asset_filename(self, url: str, content_type: str, alt: str | None) -> str:
         """Создаёт имя файла для asset."""

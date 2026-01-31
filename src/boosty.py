@@ -2,7 +2,7 @@
 """Загрузчик для Boosty.to"""
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 import requests
 
@@ -81,7 +81,7 @@ class BoostyDownloader(BaseDownloader):
 
         # Дата — timestamp в секундах
         created_at = raw_data.get("createdAt", 0)
-        post_date = datetime.utcfromtimestamp(created_at).isoformat()
+        post_date = datetime.fromtimestamp(created_at, tz=timezone.utc).isoformat()
 
         # URL поста
         author = raw_data.get("user", {}).get("blogUrl", self.source.author)
@@ -159,8 +159,6 @@ class BoostyDownloader(BaseDownloader):
 
     def _block_to_markdown(self, block: dict, asset_map: dict[str, str]) -> str:
         """Конвертирует один блок в Markdown."""
-        if asset_map is None:
-            asset_map = {}
         block_type = block.get("type", "")
 
         if block_type == "text":
