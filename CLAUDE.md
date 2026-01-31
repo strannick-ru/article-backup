@@ -56,6 +56,19 @@ src/
 5. Сетевые запросы используют retry с exponential backoff (кроме 4xx ошибок)
 6. При коллизии имён файлов добавляется хеш URL
 7. Встроенные видео (iframe/embed) в Sponsr заменяются на markdown-ссылки перед конвертацией html2text
+8. Hugo `relativeURLs = true` + `relURL` даёт пути вида `../../../path/` — не работает для субдоменов, используем `path.Base` в list.html
+
+## Docker
+
+```
+Dockerfile              → Python 3.12-slim, копирует backup.py и src/
+docker-compose.yml      → сервисы backup (Python) и hugo (latest + копирование CSS)
+.dockerignore           → исключает __pycache__, .git, backup/, site/public/
+```
+
+Запуск: `docker compose run --rm backup && docker compose run --rm hugo`
+
+Сервис `hugo` после сборки автоматически копирует CSS в папки авторов для поддержки субдоменов.
 
 ## Hugo-сайт
 
@@ -98,7 +111,13 @@ site/
 
 **Изменить шаблоны Hugo:**
 → `site/layouts/_default/` — single.html (статья), list.html (списки), baseof.html (базовый)
-→ Все ссылки должны использовать `relURL` для относительных путей
+→ CSS и внешние ресурсы используют `relURL` для относительных путей
+→ Ссылки на посты в list.html используют `path.Base .RelPermalink` для прямых путей (совместимость с субдоменами)
 
 **Добавить CSS для автора:**
 → Создать `backup/{platform}/{author}/css/author.css` с кастомными переменными
+
+**Изменить Docker-конфигурацию:**
+→ `Dockerfile` — базовый образ, зависимости, точка входа
+→ `docker-compose.yml` — volumes, сервисы backup и hugo
+→ Пересборка: `docker compose build`

@@ -100,6 +100,39 @@ python backup.py "https://boosty.to/author/posts/uuid"
 python backup.py -c /path/to/config.yaml
 ```
 
+## Docker
+
+Для серверов с устаревшим Python можно использовать Docker.
+
+```bash
+# Сборка образа
+docker compose build
+
+# Синхронизация всех авторов
+docker compose run --rm backup
+
+# Скачать один пост
+docker compose run --rm backup "https://sponsr.ru/author/123/"
+
+# Сборка Hugo-сайта
+docker compose run --rm hugo
+
+# Полная синхронизация (backup + hugo)
+docker compose run --rm backup && docker compose run --rm hugo
+
+# Пересборка после изменений кода
+docker compose build --no-cache
+```
+
+### Cron
+
+Для автоматической синхронизации добавьте в crontab:
+
+```bash
+# Каждый день в 3:00
+0 3 * * * cd /path/to/article-backup && docker compose run --rm backup && docker compose run --rm hugo >> /var/log/article-backup.log 2>&1
+```
+
 ## Структура выходных файлов
 
 ```
@@ -142,10 +175,13 @@ cd site && hugo server -D
 
 ### Субдомены для авторов (nginx)
 
-Каждого автора можно раздавать на отдельном субдомене:
+Каждого автора можно раздавать на отдельном субдомене. При использовании Docker CSS автоматически копируется в папки авторов.
 
 ```bash
-# Сборка с копированием CSS в папки авторов
+# Docker (CSS копируется автоматически)
+docker compose run --rm backup && docker compose run --rm hugo
+
+# Или локально через build.sh
 cd site && ./build.sh
 ```
 
@@ -157,7 +193,15 @@ server {
     server_name pushkin.example.site;
     root /var/www/backup/site/public/sponsr/pushkin;
     index index.html;
-    location / { try_files $uri $uri/ =404; }
+
+    # Корень показывает список постов
+    location = / {
+        try_files /posts/index.html =404;
+    }
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
 }
 ```
 

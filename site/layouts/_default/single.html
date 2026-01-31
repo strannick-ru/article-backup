@@ -8,7 +8,6 @@
 </head>
 <body>
   <article>
-    <h1>{{ .Title }}</h1>
     <div class="meta">
       <time>{{ .Date.Format "02.01.2006" }}</time>
       {{ with .Params.author }} • {{ . }}{{ end }}

@@ -13,6 +13,7 @@ config.yaml
 backup/
 site/public/
 site/resources/
+*.log
 
 # IDE
 .claude/

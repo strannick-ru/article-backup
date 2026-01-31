@@ -1,0 +1,24 @@
+services:
+  backup:
+    build: .
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./sponsr_cookie.txt:/app/sponsr_cookie.txt:ro
+      - ./boosty_cookie.txt:/app/boosty_cookie.txt:ro
+      - ./boosty_auth.txt:/app/boosty_auth.txt:ro
+      - ./backup:/app/backup
+      - ./site:/app/site
+
+  hugo:
+    image: ghcr.io/gohugoio/hugo:latest
+    volumes:
+      - ./site:/site
+      - ./backup:/site/content
+    working_dir: /site
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        hugo --minify
+        for d in public/sponsr/*/ public/boosty/*/; do
+          [ -d "$$d" ] && cp -r public/css "$$d" && echo "CSS → $$d"
+        done
