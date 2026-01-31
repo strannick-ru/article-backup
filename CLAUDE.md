@@ -9,7 +9,7 @@
 ```
 backup.py          → CLI точка входа, парсинг аргументов
 src/
-├── config.py      → загрузка YAML-конфига, dataclasses Config/Source/Auth
+├── config.py      → загрузка YAML-конфига, dataclasses Config/Source/Auth/HugoConfig
 ├── database.py    → SQLite индекс, CRUD для PostRecord
 ├── downloader.py  → BaseDownloader (абстрактный), общая логика сохранения
 ├── sponsr.py      → SponsorDownloader, API sponsr.ru
@@ -29,7 +29,7 @@ src/
 - `Post` — dataclass с полями: post_id, title, content_html, post_date, source_url, tags, assets
 
 - `Database` — SQLite wrapper с connection pooling
-  - Использует один connection на сессию
+  - Использует один connection на сессию с timeout=30 и WAL mode
   - Поддерживает context manager (`with Database(...) as db:`)
 
 - `retry_request()` — функция для retry с exponential backoff (3 попытки, задержка 1-30 сек)
@@ -57,6 +57,8 @@ src/
 6. При коллизии имён файлов добавляется хеш URL
 7. Встроенные видео (iframe/embed) в Sponsr заменяются на markdown-ссылки перед конвертацией html2text
 8. Hugo `relativeURLs = true` + `relURL` даёт пути вида `../../../path/` — не работает для субдоменов, используем `path.Base` в list.html
+9. SQLite использует timeout=30 сек и WAL mode для избежания "database is locked" при множественных источниках
+10. `site/hugo.toml` перезаписывается при каждом запуске backup.py — ручные изменения не сохраняются
 
 ## Docker
 
@@ -74,7 +76,7 @@ docker-compose.yml      → сервисы backup (Python) и hugo (latest + к�
 
 ```
 site/
-├── hugo.toml           → конфиг Hugo (relativeURLs = true)
+├── hugo.toml           → конфиг Hugo (генерируется из config.yaml)
 ├── build.sh            → сборка + копирование CSS в папки авторов
 ├── static/css/         → стили (reader.css)
 ├── layouts/_default/   → шаблоны (single.html, list.html, baseof.html)
@@ -82,6 +84,7 @@ site/
 ```
 
 - `backup.py` автоматически создаёт симлинк `site/content → output_dir`
+- `backup.py` генерирует `site/hugo.toml` из секции `hugo:` в config.yaml (base_url, title, language_code)
 - `build.sh` — собирает Hugo и копирует CSS в каждую папку автора для автономной раздачи через субдомены
 - Относительные URL включены — сайт работает из любой директории
 - RSS генерируется для каждого автора: `/{platform}/{author}/index.xml`
@@ -121,3 +124,8 @@ site/
 → `Dockerfile` — базовый образ, зависимости, точка входа
 → `docker-compose.yml` — volumes, сервисы backup и hugo
 → Пересборка: `docker compose build`
+
+**Изменить настройки Hugo:**
+→ `config.yaml` секция `hugo:` — base_url, title, language_code
+→ `backup.py: generate_hugo_config()` — шаблон генерации hugo.toml
+→ `src/config.py: HugoConfig` — dataclass с параметрами и значениями по умолчанию

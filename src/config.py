@@ -25,10 +25,18 @@ class Auth:
 
 
 @dataclass
+class HugoConfig:
+    base_url: str = "http://localhost:1313/"
+    title: str = "Бэкап статей"
+    language_code: str = "ru"
+
+
+@dataclass
 class Config:
     output_dir: Path
     auth: Auth
     sources: list[Source] = field(default_factory=list)
+    hugo: HugoConfig = field(default_factory=HugoConfig)
 
 
 def load_config(config_path: Path) -> Config:
@@ -57,7 +65,15 @@ def load_config(config_path: Path) -> Config:
             display_name=src.get('display_name'),
         ))
 
-    return Config(output_dir=output_dir, auth=auth, sources=sources)
+    # hugo
+    hugo_data = data.get('hugo', {})
+    hugo = HugoConfig(
+        base_url=hugo_data.get('base_url', HugoConfig.base_url),
+        title=hugo_data.get('title', HugoConfig.title),
+        language_code=hugo_data.get('language_code', HugoConfig.language_code),
+    )
+
+    return Config(output_dir=output_dir, auth=auth, sources=sources, hugo=hugo)
 
 
 def _to_path(value: str | None) -> Path | None:

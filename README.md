@@ -41,6 +41,11 @@ cp config.yaml.example config.yaml
 ```yaml
 output_dir: ./backup
 
+hugo:
+  base_url: "https://example.com/"
+  title: "Бэкап статей"
+  language_code: "ru"
+
 auth:
   sponsr_cookie_file: ./sponsr_cookie.txt
   boosty_cookie_file: ./boosty_cookie.txt
@@ -50,7 +55,7 @@ sources:
   - platform: sponsr
     author: pushkin
     display_name: "Пушкин. Проза"
-    
+
   - platform: boosty
     author: lermontov
     display_name: "Лермонтов. Стихи"
@@ -155,7 +160,9 @@ backup/
 
 ## Интеграция с Hugo
 
-После первого запуска `backup.py` автоматически создаёт симлинк `site/content → output_dir`.
+После каждого запуска `backup.py`:
+- Автоматически создаётся симлинк `site/content → output_dir`
+- Генерируется `site/hugo.toml` из секции `hugo:` в конфиге
 
 ```bash
 # Запуск локального сервера
@@ -163,6 +170,19 @@ cd site && hugo server -D
 ```
 
 Откройте http://localhost:1313
+
+### Настройка Hugo
+
+Параметры Hugo задаются в `config.yaml`:
+
+```yaml
+hugo:
+  base_url: "https://example.com/"  # URL сайта для production
+  title: "Мой архив статей"         # Заголовок сайта
+  language_code: "ru"               # Язык контента
+```
+
+Если секция `hugo:` не указана, используются значения по умолчанию (`http://localhost:1313/`).
 
 ### RSS-ленты
 

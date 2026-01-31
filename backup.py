@@ -14,6 +14,33 @@ from src.sponsr import SponsorDownloader
 from src.boosty import BoostyDownloader
 
 
+def generate_hugo_config(config: Config):
+    """Генерирует site/hugo.toml из конфига."""
+    hugo_toml = Path('site/hugo.toml')
+    if not hugo_toml.parent.exists():
+        return
+
+    content = f'''baseURL = '{config.hugo.base_url}'
+languageCode = '{config.hugo.language_code}'
+title = '{config.hugo.title}'
+relativeURLs = true
+
+[markup.goldmark.renderer]
+  unsafe = true
+
+[taxonomies]
+  tag = 'tags'
+
+[outputs]
+  home = ["HTML"]
+  section = ["HTML", "RSS"]
+
+[services.rss]
+  limit = 50
+'''
+    hugo_toml.write_text(content, encoding='utf-8')
+
+
 def ensure_site_content_link(config: Config):
     """Создаёт симлинк site/content → output_dir."""
     site_content = Path('site/content')
@@ -127,6 +154,7 @@ def main():
             sync_all(config, db)
 
     ensure_site_content_link(config)
+    generate_hugo_config(config)
     print("\nГотово!")
 
 

@@ -30,7 +30,8 @@ class Database:
         """Возвращает соединение, создавая его при необходимости."""
         if self._conn is None:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
-            self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            self._conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30)
+            self._conn.execute('PRAGMA journal_mode=WAL')
             self._conn.row_factory = sqlite3.Row
         return self._conn
 

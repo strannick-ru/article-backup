@@ -1,5 +1,10 @@
 output_dir: ./backup
 
+hugo:
+  base_url: "https://example.com/"
+  title: "Бэкап статей"
+  language_code: "ru"
+
 auth:
   sponsr_cookie_file: ./sponsr_cookie.txt
   boosty_cookie_file: ./boosty_cookie.txt
