@@ -129,3 +129,59 @@ site/
 → `config.yaml` секция `hugo:` — base_url, title, language_code
 → `backup.py: generate_hugo_config()` — шаблон генерации hugo.toml
 → `src/config.py: HugoConfig` — dataclass с параметрами и значениями по умолчанию
+
+## Релизы и публикация
+
+**Структура пакета для PyPI:**
+- `backup.py` — основной модуль в корне (py-modules)
+- `src/` — пакет с модулями (packages.find)
+- `pyproject.toml` — метаданные, зависимости, entry point `article-backup`
+- Entry point: `article-backup` → `backup:main`
+
+**Процесс релиза:**
+
+1. **Обновить версию:**
+   - `pyproject.toml`: `version = "X.Y.Z"`
+   - `CHANGELOG.md`: переместить [Unreleased] → [X.Y.Z] с датой
+
+2. **Обновить документацию:**
+   - `README.md`: проверить актуальность инструкций
+   - Бейджи PyPI, Python, License в начале README
+
+3. **Собрать пакет:**
+   ```bash
+   python -m build
+   python -m twine check dist/*
+   ```
+
+4. **Опубликовать на PyPI:**
+   ```bash
+   python -m twine upload dist/*
+   # Токен: pypi-...
+   ```
+
+5. **Git релиз:**
+   ```bash
+   git add .
+   git commit -m "Подготовка к релизу vX.Y.Z"
+   git tag -a vX.Y.Z -m "Release vX.Y.Z"
+   git push origin main
+   git push origin vX.Y.Z
+   ```
+
+6. **GitHub Release:**
+   - Создать через веб-интерфейс или `gh release create`
+   - Описание из CHANGELOG
+   - Приложить quickstart архив:
+     ```bash
+     tar -czf article-backup-vX.Y.Z-quickstart.tar.gz \
+       README.md LICENSE config.yaml.example docker-compose.yml \
+       Dockerfile .dockerignore requirements.txt pyproject.toml \
+       --transform 's,^,article-backup/,'
+     gh release upload vX.Y.Z article-backup-vX.Y.Z-quickstart.tar.gz
+     ```
+
+**После релиза:**
+- Проверить https://pypi.org/project/article-backup/
+- Протестировать установку: `pip install article-backup==X.Y.Z`
+- Проверить GitHub Release с assets
