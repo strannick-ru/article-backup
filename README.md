@@ -20,7 +20,7 @@
 Требуется **Python 3.10+**
 
 ```bash
-git clone https://github.com/username/article-backup.git
+git clone https://github.com/strannick-ru/article-backup.git
 cd article-backup
 python -m venv venv
 source venv/bin/activate  # Linux/macOS
