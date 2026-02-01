@@ -1,9 +1,22 @@
 [project]
 name = "article-backup"
 version = "0.1.0"
-description = "Локальный бэкап статей с Sponsr.ru и Boosty.to"
-license = "Apache-2.0"
+description = "Локальный бэкап статей с Sponsr.ru и Boosty.to в Markdown с Hugo-интеграцией"
+readme = "README.md"
+license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
+keywords = ["backup", "markdown", "sponsr", "boosty", "archiver", "hugo"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+    "Topic :: System :: Archiving :: Backup",
+]
 dependencies = [
     "requests",
     "beautifulsoup4",
@@ -13,5 +26,15 @@ dependencies = [
     "pyyaml",
 ]
 
+[project.urls]
+Homepage = "https://github.com/strannick-ru/article-backup"
+Repository = "https://github.com/strannick-ru/article-backup"
+"Bug Tracker" = "https://github.com/strannick-ru/article-backup/issues"
+Changelog = "https://github.com/strannick-ru/article-backup/blob/main/CHANGELOG.md"
+
 [project.scripts]
-backup = "backup:main"
+article-backup = "backup:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
