@@ -19,6 +19,14 @@
 
 Требуется **Python 3.10+**
 
+### Вариант 1: Через pip (рекомендуется)
+
+```bash
+pip install article-backup
+```
+
+### Вариант 2: Из исходников
+
 ```bash
 git clone https://github.com/strannick-ru/article-backup.git
 cd article-backup
@@ -89,20 +97,24 @@ console.log("Cookie:\n" + cookie + "\n\nAuthorization:\nBearer " + auth.accessTo
 ### Синхронизация всех авторов
 
 ```bash
+# Если установлено через pip
+article-backup
+
+# Или из исходников
 python backup.py
 ```
 
 ### Скачать один пост по URL
 
 ```bash
-python backup.py "https://sponsr.ru/author/12345/post-title/"
-python backup.py "https://boosty.to/author/posts/uuid"
+article-backup "https://sponsr.ru/author/12345/post-title/"
+article-backup "https://boosty.to/author/posts/uuid"
 ```
 
 ### Указать другой конфиг
 
 ```bash
-python backup.py -c /path/to/config.yaml
+article-backup -c /path/to/config.yaml
 ```
 
 ## Docker
