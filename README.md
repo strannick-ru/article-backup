@@ -1,5 +1,9 @@
 # Article Backup
 
+[![PyPI version](https://badge.fury.io/py/article-backup.svg)](https://pypi.org/project/article-backup/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
 Скрипт для локального бэкапа статей с платформ **Sponsr.ru** и **Boosty.to**.
 
 Конвертирует статьи в Markdown с YAML-метаданными, скачивает изображения и другие медиафайлы, поддерживает инкрементальную синхронизацию.
