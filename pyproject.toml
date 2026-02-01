@@ -4,6 +4,9 @@ version = "0.1.0"
 description = "Локальный бэкап статей с Sponsr.ru и Boosty.to в Markdown с Hugo-интеграцией"
 readme = "README.md"
 license = {text = "Apache-2.0"}
+authors = [
+    {name = "Eugene Chaykin", email = "eugene@chayk.in"}
+]
 requires-python = ">=3.10"
 keywords = ["backup", "markdown", "sponsr", "boosty", "archiver", "hugo"]
 classifiers = [
@@ -38,3 +41,10 @@ article-backup = "backup:main"
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["backup"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
