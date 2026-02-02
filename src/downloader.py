@@ -61,7 +61,9 @@ def retry_request(
                 time.sleep(delay)
                 delay = min(delay * backoff_factor, max_delay)
 
-    raise last_exception
+    if last_exception:
+        raise last_exception
+    raise Exception("Max retries exceeded")
 
 
 @dataclass
@@ -135,6 +137,7 @@ class BaseDownloader(ABC):
     def download_single(self, post_id: str):
         """Скачивает один пост по ID."""
         print(f"[{self.PLATFORM}] Скачивание поста {post_id}...")
+        self._create_index_files()  # Создаем индексы, чтобы не было "Boosties"
         post = self.fetch_post(post_id)
         if post:
             self._save_post(post)
@@ -251,9 +254,9 @@ class BaseDownloader(ABC):
         def download_one(asset: dict) -> tuple[str, str | None]:
             url = asset["url"]
             try:
-                # Предварительная проверка только по расширению (если есть)
+                # Предварительная проверка (если расширение есть)
                 ext = Path(urlparse(url).path).suffix.lower()
-                if ext and ext not in ALLOWED_EXTENSIONS:
+                if ext and not should_download_asset(url, None, self.source.asset_types):
                     return url, None
 
                 def do_request():
@@ -266,7 +269,7 @@ class BaseDownloader(ABC):
                 content_type = response.headers.get('Content-Type', '')
 
                 # Полная проверка после получения Content-Type
-                if not should_download_asset(url, content_type):
+                if not should_download_asset(url, content_type, self.source.asset_types):
                     return url, None
 
                 filename = self._make_asset_filename(url, content_type, asset.get('alt'))

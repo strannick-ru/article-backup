@@ -1,25 +1,18 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ .Title }}</title>
-  {{ with .OutputFormats.Get "RSS" }}
-  <link rel="alternate" type="application/rss+xml" href="index.xml" title="{{ $.Title }}">
-  {{ end }}
-  <link rel="stylesheet" href="{{ "css/reader.css" | relURL }}">
-</head>
-<body>
-  <h1>{{ .Title }}
-    {{ with .OutputFormats.Get "RSS" }}
-    <a class="rss-link" href="index.xml" title="RSS">📡</a>
+{{ define "main" }}
+  <header>
+    <h1>{{ .Title }}
+      {{ with .OutputFormats.Get "RSS" }}
+      <a class="rss-link" href="index.xml" title="RSS">📡</a>
+      {{ end }}
+    </h1>
+  </header>
+
+  <div class="post-list">
+    {{ range .Pages.ByDate.Reverse }}
+    <div class="post-item">
+      <span class="date">{{ .Date.Format "2006-01-02" }}</span>
+      <a class="post-link" href="{{ .RelPermalink }}">{{ .Title }}</a>
+    </div>
     {{ end }}
-  </h1>
-  {{ range .Pages.ByDate.Reverse }}
-  <div class="post">
-    <span class="date">{{ .Date.Format "2006-01-02" }}</span>
-    <a href="{{ path.Base .RelPermalink }}/">{{ .Title }}</a>
   </div>
-  {{ end }}
-</body>
-</html>
+{{ end }}

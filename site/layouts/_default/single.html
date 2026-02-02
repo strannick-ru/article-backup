@@ -1,20 +1,19 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ .Title }}</title>
-  <link rel="stylesheet" href="{{ "css/reader.css" | relURL }}">
-</head>
-<body>
+{{ define "main" }}
   <article>
+    <h1 class="post-title">{{ .Title }}</h1>
     <div class="meta">
       <time>{{ .Date.Format "02.01.2006" }}</time>
       {{ with .Params.author }} • {{ . }}{{ end }}
-      {{ with .Params.tags }}<div class="tags">{{ range . }}<a href="{{ printf "tags/%s/" (. | urlize) | relURL }}">#{{ . }}</a>{{ end }}</div>{{ end }}
-      <div><a href="{{ .Params.source }}" target="_blank">Оригинал</a></div>
+      {{ with .Params.tags }}
+        <span class="tags">
+          {{ range . }}<a href="{{ printf "tags/%s/" (. | urlize) | relURL }}">#{{ . }}</a>{{ end }}
+        </span>
+      {{ end }}
+      <span class="source-link"> • <a href="{{ .Params.source }}" target="_blank">Оригинал</a></span>
     </div>
-    {{ .Content }}
+    
+    <div class="content">
+      {{ .Content }}
+    </div>
   </article>
-</body>
-</html>
+{{ end }}

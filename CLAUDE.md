@@ -65,10 +65,11 @@ src/
 ```
 Dockerfile              → Python 3.12-slim, копирует backup.py и src/
 docker-compose.yml      → сервисы backup (Python) и hugo (latest + копирование CSS)
+run-docker.sh           → скрипт-обертка для корректного запуска с учетом config.yaml
 .dockerignore           → исключает __pycache__, .git, backup/, site/public/
 ```
 
-Запуск: `docker compose run --rm backup && docker compose run --rm hugo`
+Запуск: `./run-docker.sh` (рекомендуется) или `docker compose run ...`
 
 Сервис `hugo` после сборки автоматически копирует CSS в папки авторов для поддержки субдоменов.
 
@@ -79,7 +80,7 @@ site/
 ├── hugo.toml           → конфиг Hugo (генерируется из config.yaml)
 ├── build.sh            → сборка + копирование CSS в папки авторов
 ├── static/css/         → стили (reader.css)
-├── layouts/_default/   → шаблоны (single.html, list.html, baseof.html)
+├── layouts/_default/   → шаблоны (baseof.html, single.html, list.html)
 └── public/             → сгенерированный сайт
 ```
 
@@ -107,13 +108,15 @@ site/
 → `BaseDownloader._make_frontmatter()`
 
 **Изменить фильтрацию assets:**
-→ `utils.py`: `ALLOWED_EXTENSIONS`, `should_download_asset()`
+→ `utils.py`: `ASSET_TYPES`, `should_download_asset()`
+→ `config.py`: `Source.asset_types` (image, video, audio, document)
 
 **Настроить retry параметры:**
 → `downloader.py`: `retry_request()` — параметры max_retries, base_delay, max_delay, backoff_factor
 
 **Изменить шаблоны Hugo:**
 → `site/layouts/_default/` — single.html (статья), list.html (списки), baseof.html (базовый)
+→ CSS использует переменные для тем (Light, Dark, Sepia, Gruvbox, Everforest)
 → CSS и внешние ресурсы используют `relURL` для относительных путей
 → Ссылки на посты в list.html используют `path.Base .RelPermalink` для прямых путей (совместимость с субдоменами)
 
@@ -126,7 +129,7 @@ site/
 → Пересборка: `docker compose build`
 
 **Изменить настройки Hugo:**
-→ `config.yaml` секция `hugo:` — base_url, title, language_code
+→ `config.yaml` секция `hugo:` — base_url, title, language_code, default_theme
 → `backup.py: generate_hugo_config()` — шаблон генерации hugo.toml
 → `src/config.py: HugoConfig` — dataclass с параметрами и значениями по умолчанию
 

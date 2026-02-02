@@ -1,19 +1,21 @@
 services:
   backup:
     build: .
+    environment:
+      - BACKUP_OUTPUT_DIR=/app/backup
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./sponsr_cookie.txt:/app/sponsr_cookie.txt:ro
       - ./boosty_cookie.txt:/app/boosty_cookie.txt:ro
       - ./boosty_auth.txt:/app/boosty_auth.txt:ro
-      - ./backup:/app/backup
+      - ${HOST_BACKUP_DIR:-./backup}:/app/backup
       - ./site:/app/site
 
   hugo:
     image: ghcr.io/gohugoio/hugo:latest
     volumes:
       - ./site:/site
-      - ./backup:/site/content
+      - ${HOST_BACKUP_DIR:-./backup}:/site/content
     working_dir: /site
     entrypoint: ["sh", "-c"]
     command:

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
+import os
 
 Platform = Literal['sponsr', 'boosty']
 
@@ -16,6 +17,7 @@ class Source:
     author: str
     download_assets: bool = True
     display_name: str | None = None
+    asset_types: list[str] | None = None
 
 @dataclass
 class Auth:
@@ -29,6 +31,7 @@ class HugoConfig:
     base_url: str = "http://localhost:1313/"
     title: str = "Бэкап статей"
     language_code: str = "ru"
+    default_theme: str = "light"
 
 
 @dataclass
@@ -45,7 +48,11 @@ def load_config(config_path: Path) -> Config:
         data = yaml.safe_load(f)
 
     # output_dir
-    output_dir = Path(data.get('output_dir', './backup'))
+    env_output_dir = os.environ.get('BACKUP_OUTPUT_DIR')
+    if env_output_dir:
+        output_dir = Path(env_output_dir)
+    else:
+        output_dir = Path(data.get('output_dir', './backup'))
 
     # auth
     auth_data = data.get('auth', {})
@@ -63,6 +70,7 @@ def load_config(config_path: Path) -> Config:
             author=src['author'],
             download_assets=src.get('download_assets', True),
             display_name=src.get('display_name'),
+            asset_types=src.get('asset_types'),
         ))
 
     # hugo
@@ -71,6 +79,7 @@ def load_config(config_path: Path) -> Config:
         base_url=hugo_data.get('base_url', HugoConfig.base_url),
         title=hugo_data.get('title', HugoConfig.title),
         language_code=hugo_data.get('language_code', HugoConfig.language_code),
+        default_theme=hugo_data.get('default_theme', HugoConfig.default_theme),
     )
 
     return Config(output_dir=output_dir, auth=auth, sources=sources, hugo=hugo)
