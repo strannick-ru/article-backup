@@ -4,7 +4,7 @@
 
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/).
 
-## [Unreleased]
+## [0.2.0] - 2026-02-03
 
 ### Added
 
