@@ -150,17 +150,23 @@ class SponsorDownloader(BaseDownloader):
 
     def _parse_post(self, raw_data: dict) -> Post:
         """Парсит сырые данные API в Post."""
-        post_id = str(raw_data['post_id'])
-        title = raw_data.get('post_title', 'Без названия')
-        post_date = raw_data.get('post_date', '')
+        post_id = str(raw_data.get('post_id') or raw_data.get('id'))
+        title = raw_data.get('post_title') or raw_data.get('title') or 'Без названия'
+        post_date = raw_data.get('post_date') or raw_data.get('date') or ''
 
         # URL поста
-        post_url = raw_data.get('post_url', '')
+        post_url = raw_data.get('post_url') or f"/{self.source.author}/{post_id}/"
         if post_url and not post_url.startswith('http'):
             post_url = f"https://sponsr.ru{post_url}"
 
         # HTML контент
-        content_html = raw_data.get('post_text', '')
+        content_obj = raw_data.get('post_text') or raw_data.get('text')
+        if isinstance(content_obj, dict):
+            content_html = content_obj.get('text', '')
+        elif isinstance(content_obj, str):
+            content_html = content_obj
+        else:
+            content_html = ''
 
         # Теги
         tags = raw_data.get('tags', [])

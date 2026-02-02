@@ -16,4 +16,4 @@ for platform in public/sponsr public/boosty; do
     done
 done
 
-echo "Build complete"
+echo "Сборка завершена"

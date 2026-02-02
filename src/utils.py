@@ -6,16 +6,24 @@ from pathlib import Path
 from urllib.parse import urlparse
 from slugify import slugify
 
-# Белый список расширений
-ALLOWED_EXTENSIONS = {
-    '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg',
-    '.mp4', '.webm', '.mov', '.mkv', '.avi',
-    '.mp3', '.wav', '.flac', '.ogg',
-    '.pdf',
+# Типы ассетов и их расширения
+ASSET_TYPES = {
+    'image': {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'},
+    'video': {'.mp4', '.webm', '.mov', '.mkv', '.avi'},
+    'audio': {'.mp3', '.wav', '.flac', '.ogg'},
+    'document': {'.pdf'},
 }
 
-# Допустимые Content-Type
-ALLOWED_CONTENT_TYPES = {'image/', 'video/', 'audio/', 'application/pdf'}
+# Глобальный список разрешенных расширений
+ALLOWED_EXTENSIONS = set().union(*ASSET_TYPES.values())
+
+# Префиксы Content-Type для категорий
+CONTENT_TYPE_MAP = {
+    'image': ['image/'],
+    'video': ['video/'],
+    'audio': ['audio/'],
+    'document': ['application/pdf'],
+}
 
 # Паттерны для внутренних ссылок
 SPONSR_LINK_PATTERN = re.compile(r'https?://sponsr\.ru/([^/]+)/(\d+)(?:/[^\s\)\]"\'<>]*)?')
@@ -60,21 +68,50 @@ def is_post_url(text: str) -> bool:
         return False
 
 
-def should_download_asset(url: str, content_type: str | None = None) -> bool:
+def should_download_asset(
+    url: str,
+    content_type: str | None = None,
+    allowed_types: list[str] | None = None
+) -> bool:
     """
     Проверяет, нужно ли скачивать файл.
 
     Args:
         url: URL файла
         content_type: Content-Type из заголовков ответа (опционально)
+        allowed_types: Список разрешенных типов (image, video, audio, document).
+                       Если None или пустой — разрешено всё из ALLOWED_EXTENSIONS.
     """
     ext = Path(urlparse(url).path).suffix.lower()
 
-    if ext:
-        return ext in ALLOWED_EXTENSIONS
+    # Если типы не указаны, используем глобальный фильтр
+    if not allowed_types:
+        if ext:
+            return ext in ALLOWED_EXTENSIONS
+        
+        # Fallback для content-type (старое поведение)
+        if content_type:
+            basic_types = ['image/', 'video/', 'audio/', 'application/pdf']
+            return any(ct in content_type for ct in basic_types)
+        
+        return False
 
+    # Если типы указаны, проверяем строго по ним
+    
+    # 1. Проверка по расширению
+    if ext:
+        for type_name in allowed_types:
+            if ext in ASSET_TYPES.get(type_name, set()):
+                return True
+        # Если расширение есть, но не совпало ни с одним разрешенным типом — запрещаем
+        return False
+
+    # 2. Проверка по Content-Type (если нет расширения)
     if content_type:
-        return any(ct in content_type for ct in ALLOWED_CONTENT_TYPES)
+        for type_name in allowed_types:
+            prefixes = CONTENT_TYPE_MAP.get(type_name, [])
+            if any(prefix in content_type for prefix in prefixes):
+                return True
 
     return False
 

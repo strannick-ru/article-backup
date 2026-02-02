@@ -14,9 +14,10 @@
 - Инкрементальные обновления — скачивает только новые статьи
 - Конвертация в Markdown с frontmatter (title, date, tags, source)
 - Локальное сохранение изображений, видео, аудио, PDF
+- Гибкая фильтрация типов скачиваемых файлов (image, video, audio, document)
 - Сохранение ссылок на встроенные видео (Rutube, YouTube, Vimeo, VK, OK.ru)
 - Исправление внутренних ссылок между статьями
-- Интеграция с Hugo для просмотра в браузере
+- Интеграция с Hugo для просмотра в браузере (поддержка тем, улучшенная типографика)
 - SQLite-индекс для быстрого поиска
 
 ## Установка
@@ -67,7 +68,8 @@ sources:
   - platform: sponsr
     author: pushkin
     display_name: "Пушкин. Проза"
-
+    asset_types: ["image", "document"] # Скачивать только картинки и документы
+    
   - platform: boosty
     author: lermontov
     display_name: "Лермонтов. Стихи"
@@ -125,24 +127,32 @@ article-backup -c /path/to/config.yaml
 
 Для серверов с устаревшим Python можно использовать Docker.
 
-```bash
-# Сборка образа
-docker compose build
+Для удобства используйте скрипт `run-docker.sh`, который автоматически подхватывает `output_dir` из вашего `config.yaml` и монтирует правильный volume.
 
-# Синхронизация всех авторов
-docker compose run --rm backup
+```bash
+# Синхронизация + сборка сайта (рекомендуемый способ)
+./run-docker.sh
 
 # Скачать один пост
-docker compose run --rm backup "https://sponsr.ru/author/123/"
+./run-docker.sh "https://sponsr.ru/author/123/"
 
-# Сборка Hugo-сайта
-docker compose run --rm hugo
+# Только пересборка сайта
+./run-docker.sh hugo
 
-# Полная синхронизация (backup + hugo)
-docker compose run --rm backup && docker compose run --rm hugo
+# Пересборка контейнеров
+./run-docker.sh build
+```
 
-# Пересборка после изменений кода
-docker compose build --no-cache
+### Ручной запуск (Advanced)
+
+Если вы не хотите использовать скрипт, можно запускать через `docker compose`, но нужно вручную указывать путь к бэкапам, если он отличается от `./backup`.
+
+```bash
+# Если output_dir в конфиге = ./backup
+docker compose run --rm backup
+
+# Если output_dir другой
+HOST_BACKUP_DIR=/path/to/data docker compose run --rm backup
 ```
 
 ### Cron
@@ -196,7 +206,10 @@ hugo:
   base_url: "https://example.com/"  # URL сайта для production
   title: "Мой архив статей"         # Заголовок сайта
   language_code: "ru"               # Язык контента
+  default_theme: "sepia"            # Тема по умолчанию: light, dark, sepia, gruvbox, everforest
 ```
+
+Сайт поддерживает переключение тем "на лету" (кнопки в углу экрана). Выбор пользователя сохраняется в браузере.
 
 Если секция `hugo:` не указана, используются значения по умолчанию (`http://localhost:1313/`).
 

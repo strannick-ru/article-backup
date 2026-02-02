@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ .Title }}</title>
+  <link rel="stylesheet" href="{{ "css/reader.css" | relURL }}">
+  {{ with .OutputFormats.Get "RSS" }}
+  <link rel="alternate" type="application/rss+xml" href="index.xml" title="{{ $.Title }}">
+  {{ end }}
+  
+  <script>
+    (function() {
+      const savedTheme = localStorage.getItem('theme');
+      const defaultTheme = '{{ .Site.Params.default_theme | default "light" }}';
+      const theme = savedTheme || defaultTheme;
+      document.documentElement.className = 'theme-' + theme;
+    })();
+  </script>
+</head>
+<body>
+  <div class="theme-switcher">
+    <button onclick="setTheme('light')" title="Светлая">☀️</button>
+    <button onclick="setTheme('sepia')" title="Сепия">📖</button>
+    <button onclick="setTheme('dark')" title="Тёмная">🌙</button>
+    <button onclick="setTheme('gruvbox')" title="Gruvbox">🟫</button>
+    <button onclick="setTheme('everforest')" title="Everforest">🌲</button>
+  </div>
+
+  <div class="page-wrapper">
+    {{ block "main" . }}{{ end }}
+  </div>
+
+  <script>
+    function setTheme(themeName) {
+      document.documentElement.className = 'theme-' + themeName;
+      localStorage.setItem('theme', themeName);
+    }
+  </script>
+</body>
+</html>

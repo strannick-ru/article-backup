@@ -6,8 +6,9 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from typing import cast
 
-from src.config import Config, load_config, Source
+from src.config import Config, load_config, Source, Platform
 from src.database import Database
 from src.utils import is_post_url, parse_post_url
 from src.sponsr import SponsorDownloader
@@ -24,6 +25,9 @@ def generate_hugo_config(config: Config):
 languageCode = '{config.hugo.language_code}'
 title = '{config.hugo.title}'
 relativeURLs = true
+
+[params]
+  default_theme = '{config.hugo.default_theme}'
 
 [markup.goldmark.renderer]
   unsafe = true
@@ -43,6 +47,12 @@ relativeURLs = true
 
 def ensure_site_content_link(config: Config):
     """Создаёт симлинк site/content → output_dir."""
+    # В Docker-среде (когда задан BACKUP_OUTPUT_DIR) мы не создаем симлинк,
+    # так как пути внутри контейнера (/app/backup) не совпадают с хостовыми.
+    # Симлинк должен создаваться скриптом запуска (run-docker.sh) на хосте.
+    if os.environ.get('BACKUP_OUTPUT_DIR'):
+        return
+
     site_content = Path('site/content')
 
     # Если уже правильный симлинк — ничего не делаем
@@ -89,10 +99,17 @@ def sync_all(config: Config, db: Database):
 
 def download_single_post(url: str, config: Config, db: Database):
     """Скачивает один пост по URL."""
-    platform, author, post_id = parse_post_url(url)
+    platform_str, author, post_id = parse_post_url(url)
+    platform = cast(Platform, platform_str)
 
     # Создаём Source для этого автора
     source = Source(platform=platform, author=author, download_assets=True)
+
+    # Пытаемся найти настройки источника в конфиге
+    for src in config.sources:
+        if src.platform == platform and src.author == author:
+            source = src
+            break
 
     downloader = get_downloader(platform, config, source, db)
     downloader.download_single(post_id)

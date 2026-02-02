@@ -1,148 +1,249 @@
-/* static/css/reader.css */
+/* reader.css */
+@import url("https://fonts.googleapis.com/css2?family=PT+Serif+Caption:wght@400&family=PT+Serif:ital,wght@0,400;0,700;1,400;1,700&display=swap");
 
-/* ===== PT Serif (вариант A — через Google Fonts) ===== */
-/* Если хочешь без внешних запросов — см. вариант B ниже. */
-@import url("https://fonts.googleapis.com/css2?family=PT+Serif:wght@400;700&display=swap");
-
-/* ===== Gruvbox-ish palette (dark soft) ===== */
-:root{
-  color-scheme: dark;
-
-  --bg:        #32302f; /* dark0_soft */
-  --bg2:       #3c3836; /* dark1 */
-  --fg:        #ebdbb2; /* light0 */
-  --fg2:       #d5c4a1; /* light2 */
-  --muted:     #a89984; /* light4 */
-  --comment:   #928374; /* gray */
-  --border:    #504945; /* dark2 */
-
-  --accent:    #d79921; /* yellow */
-  --link:      #83a598; /* blue */
-  --visited:   #b16286; /* purple */
-
-  --code-bg:   #1d2021; /* dark0_hard-ish */
+:root {
+    --font-main: "PT Serif", serif;
+    --font-head: "PT Serif Caption", serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-/* (опционально) Светлая тема, если браузер просит light */
-@media (prefers-color-scheme: light) {
-  :root{
-    color-scheme: light;
+/* === Themes === */
 
-    --bg:      #fbf1c7; /* light0 */
-    --bg2:     #f2e5bc; /* light1 */
-    --fg:      #3c3836; /* dark1 */
-    --fg2:     #504945; /* dark2 */
-    --muted:   #665c54; /* dark4 */
-    --comment: #7c6f64; /* gray */
-
-    --border:  #d5c4a1; /* light2 */
-    --accent:  #b57614; /* yellow-ish */
-    --link:    #076678; /* blue */
-    --visited: #8f3f71; /* purple */
-
-    --code-bg: #ebdbb2; /* light-ish */
-  }
+/* Light (Default) */
+html.theme-light {
+    --bg-screen: #e5e5e5;
+    --bg-paper:  #ffffff;
+    --fg:        #333333;
+    --fg-muted:  #777777;
+    --accent:    #b57614;
+    --link:      #076678;
+    --border:    #eeeeee;
+    --code-bg:   #f5f5f5;
+    --shadow:    0 4px 20px rgba(0,0,0,0.08);
 }
 
-/* ===== Base typography for reading ===== */
-html { -webkit-text-size-adjust: 100%; }
-body{
-  margin: 0;
-  background: var(--bg);
-  color: var(--fg);
-
-  max-width: 72ch;
-  padding: 2.25rem 1.25rem;
-  margin-left: auto;
-  margin-right: auto;
-
-  font-family: "PT Serif", Georgia, serif;
-  font-size: 18px;
-  line-height: 1.75;
-
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
+/* Sepia */
+html.theme-sepia {
+    --bg-screen: #e8e4d9;
+    --bg-paper:  #f4ecd8;
+    --fg:        #5b4636;
+    --fg-muted:  #96877c;
+    --accent:    #a84e32;
+    --link:      #2e7d7f;
+    --border:    #e4dccb;
+    --code-bg:   #e9e0cb;
+    --shadow:    0 4px 20px rgba(91, 70, 54, 0.1);
 }
 
-@media (min-width: 900px){
-  body{ font-size: 19px; }
+/* Dark */
+html.theme-dark {
+    --bg-screen: #121212;
+    --bg-paper:  #1e1e1e;
+    --fg:        #e0e0e0;
+    --fg-muted:  #a0a0a0;
+    --accent:    #ffb74d;
+    --link:      #81d4fa;
+    --border:    #333333;
+    --code-bg:   #2d2d2d;
+    --shadow:    0 4px 20px rgba(0,0,0,0.5);
 }
 
-::selection{
-  background: var(--accent);
-  color: var(--bg);
+/* Gruvbox Dark */
+html.theme-gruvbox {
+    --bg-screen: #1d2021; /* dark0_hard */
+    --bg-paper:  #282828; /* dark0 */
+    --fg:        #ebdbb2; /* light1 */
+    --fg-muted:  #a89984; /* gray */
+    --accent:    #d79921; /* yellow */
+    --link:      #83a598; /* blue */
+    --border:    #3c3836; /* dark1 */
+    --code-bg:   #32302f; /* dark0_soft */
+    --shadow:    0 4px 20px rgba(0,0,0,0.4);
 }
 
-/* Headings */
-h1, h2, h3, h4{
-  line-height: 1.2;
-  margin: 2.0rem 0 0.75rem;
-  color: var(--fg);
-}
-h1{ margin-top: 0.5rem; }
-
-/* Paragraph rhythm */
-p{ margin: 0 0 1rem; }
-ul, ol{ margin: 0 0 1rem; padding-left: 1.25rem; }
-li{ margin: 0.25rem 0; }
-
-/* Links */
-a{ color: var(--link); text-decoration-thickness: 0.08em; text-underline-offset: 0.18em; }
-a:visited{ color: var(--visited); }
-a:hover{ color: var(--accent); }
-
-/* Meta, dates, secondary text */
-.meta, .date{
-  color: var(--muted);
-  font-size: 0.95em;
+/* Everforest Dark */
+html.theme-everforest {
+    --bg-screen: #232a2e; /* hard */
+    --bg-paper:  #2d353b; /* bg */
+    --fg:        #d3c6aa; /* body */
+    --fg-muted:  #859289; /* grey */
+    --accent:    #dbbc7f; /* yellow */
+    --link:      #7fbbb3; /* blue */
+    --border:    #3f4949; 
+    --code-bg:   #343f44;
+    --shadow:    0 4px 20px rgba(0,0,0,0.3);
 }
 
-/* Images */
-img{ max-width: 100%; height: auto; border-radius: 8px; }
+/* === Layout === */
 
-/* Quotes */
-blockquote{
-  margin: 1.25rem 0;
-  padding: 0.85rem 1rem;
-  background: var(--bg2);
-  border-left: 4px solid var(--accent);
-  color: var(--fg2);
-}
-
-/* Code */
-code, pre{
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  font-size: 0.92em;
-}
-code{
-  background: var(--code-bg);
-  padding: 0.15em 0.35em;
-  border-radius: 6px;
-}
-pre{
-  background: var(--code-bg);
-  padding: 1rem;
-  border-radius: 12px;
-  overflow: auto;
-  border: 1px solid var(--border);
-}
-pre code{
-  background: transparent;
-  padding: 0;
+body {
+    background-color: var(--bg-screen);
+    color: var(--fg);
+    font-family: var(--font-main);
+    font-size: 17px;
+    line-height: 1.65;
+    margin: 0;
+    padding: 0;
+    transition: background-color 0.3s ease;
 }
 
-/* Separators & tables (если встретятся) */
-hr{
-  border: 0;
-  border-top: 1px solid var(--border);
-  margin: 2rem 0;
+.page-wrapper {
+    background-color: var(--bg-paper);
+    max-width: 42rem; /* ~700px */
+    margin: 3rem auto;
+    padding: 4rem 4rem;
+    box-shadow: var(--shadow);
+    border-radius: 4px;
+    transition: background-color 0.3s ease, color 0.3s ease;
 }
-table{
-  border-collapse: collapse;
-  width: 100%;
-  margin: 1.25rem 0;
+
+/* На мобильных убираем "лист", делаем на весь экран */
+@media (max-width: 768px) {
+    .page-wrapper {
+        margin: 0;
+        max-width: none;
+        padding: 1.5rem 1.25rem;
+        box-shadow: none;
+        border-radius: 0;
+        min-height: 100vh;
+    }
+    body {
+        background-color: var(--bg-paper); /* Сливаем фон с бумагой */
+    }
 }
-th, td{
-  border: 1px solid var(--border);
-  padding: 0.5rem 0.6rem;
+
+/* === Typography === */
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-head);
+    color: var(--fg);
+    line-height: 1.3;
+    margin-top: 2em;
+    margin-bottom: 0.8em;
+}
+
+h1 { font-size: 2.2em; margin-top: 0; }
+h2 { font-size: 1.6em; }
+h3 { font-size: 1.3em; }
+
+a {
+    color: var(--link);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.2s;
+}
+a:hover {
+    border-bottom-color: var(--link);
+}
+
+blockquote {
+    border-left: 4px solid var(--accent);
+    margin: 1.5em 0;
+    padding: 0.5em 1em;
+    background: var(--code-bg); /* slightly different bg for quote */
+    font-style: italic;
+    color: var(--fg-muted);
+}
+
+img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+    display: block;
+    margin: 1.5em auto;
+}
+
+code {
+    font-family: var(--font-mono);
+    background: var(--code-bg);
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    font-size: 0.9em;
+}
+
+pre {
+    background: var(--code-bg);
+    padding: 1em;
+    border-radius: 4px;
+    overflow-x: auto;
+    margin: 1.5em 0;
+}
+pre code {
+    background: transparent;
+    padding: 0;
+}
+
+/* === Header / Meta === */
+
+.post-title {
+    margin-bottom: 0.2em;
+}
+
+.meta {
+    color: var(--fg-muted);
+    font-size: 0.9em;
+    margin-bottom: 2.5em;
+    font-family: var(--font-head);
+}
+
+.meta a {
+    color: var(--fg-muted);
+    border-bottom: 1px dotted var(--fg-muted);
+}
+
+/* === Theme Switcher === */
+
+.theme-switcher {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    background: var(--bg-paper);
+    padding: 0.5rem;
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    display: flex;
+    gap: 0.5rem;
+    z-index: 1000;
+    opacity: 0.6;
+    transition: opacity 0.3s;
+}
+
+.theme-switcher:hover {
+    opacity: 1;
+}
+
+.theme-switcher button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.2rem;
+    padding: 0.2rem;
+    border-radius: 4px;
+    transition: transform 0.1s;
+}
+
+.theme-switcher button:hover {
+    background-color: var(--code-bg);
+    transform: scale(1.1);
+}
+
+/* === Lists === */
+.post-list .post-item {
+    margin-bottom: 0.8rem;
+    display: flex;
+    gap: 1rem;
+    align-items: baseline;
+}
+
+.post-list .date {
+    color: var(--fg-muted);
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    white-space: nowrap;
+}
+
+.rss-link {
+    font-size: 0.5em;
+    vertical-align: middle;
+    text-decoration: none !important;
 }

@@ -16,6 +16,7 @@ sources:
     author: author_name
     display_name: "Отображаемое имя"
     download_assets: true
+    # asset_types: ["image", "video", "audio", "document"] # Опционально: выбор типов
     
   # Boosty
   - platform: boosty

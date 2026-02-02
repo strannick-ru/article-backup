@@ -132,7 +132,7 @@ class BoostyDownloader(BaseDownloader):
             elif block_type == "ok_video":
                 # ok.ru видео требует отдельной обработки
                 # Пока сохраняем только превью, если есть
-                preview = block.get("previewUrl", "")
+                preview = block.get("previewUrl") or block.get("preview") or ""
                 if preview:
                     assets.append({
                         "url": preview,
