@@ -1,6 +1,6 @@
 [project]
 name = "article-backup"
-version = "0.2.1"
+version = "0.2.2"
 description = "Локальный бэкап статей с Sponsr.ru и Boosty.to в Markdown с Hugo-интеграцией"
 readme = "README.md"
 license = {text = "Apache-2.0"}
