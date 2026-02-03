@@ -4,7 +4,6 @@
 import json
 import re
 
-import re
 from urllib.parse import urljoin
 
 import requests
@@ -261,11 +260,56 @@ class SponsorDownloader(BaseDownloader):
 
         markdown = h2t.handle(html)
 
+        # Удаляем bidi-маркеры, которые ломают пробелы рядом с текстом
+        markdown = re.sub(r'[\u200e\u200f\u202a-\u202e\u2066-\u2069]', '', markdown)
+
+        # Нормализуем неразрывные пробелы
+        markdown = re.sub(r'[\u00a0\u202f]', ' ', markdown)
+
+        # Склеиваем разорванный курсив вокруг bold-italic (вложенные em/strong)
+        prev = None
+        pattern = re.compile(
+            r'_(?P<left>[^_\n]+?)_(?P<sep1>[ \t]*)\*\*(?P<space1>[ \t]*)_(?P<bold>[^_\n]+?)_'
+            r'(?P<space2>[ \t]*)\*\*(?P<sep2>[ \t]*)_(?P<right>[^_\n]+?)_'
+        )
+        while prev != markdown:
+            prev = markdown
+            markdown = pattern.sub(
+                r'_\g<left>\g<sep1>\g<space1>**\g<bold>**\g<space2>\g<sep2>\g<right>_',
+                markdown,
+            )
+
+        prev = None
+        pattern = re.compile(
+            r'\*(?P<left>[^*\n]+?)\*(?P<sep1>[ \t]*)\*\*(?P<space1>[ \t]*)\*(?P<bold>[^*\n]+?)\*'
+            r'(?P<space2>[ \t]*)\*\*(?P<sep2>[ \t]*)\*(?P<right>[^*\n]+?)\*'
+        )
+        while prev != markdown:
+            prev = markdown
+            markdown = pattern.sub(
+                r'*\g<left>\g<sep1>\g<space1>**\g<bold>**\g<space2>\g<sep2>\g<right>*',
+                markdown,
+            )
+
+        # Склеиваем вложенные em/strong в жирный курсив
+        markdown = re.sub(r'\*\*\s*_(.+?)_\s*\*\*', r'***\1***', markdown)
+        markdown = re.sub(r'_\s*\*\*(.+?)\*\*\s*_', r'***\1***', markdown)
+        markdown = re.sub(r'\*\*\s*\*(.+?)\*\s*\*\*', r'***\1***', markdown)
+        markdown = re.sub(r'\*\s*\*\*(.+?)\*\*\s*\*', r'***\1***', markdown)
+
         # Убираем лишние пробелы, добавленные html2text рядом с Unicode-кавычками
         # Открывающие: « „ “ ‘
         markdown = re.sub(r'([\u00ab\u201e\u201c\u2018])\s+', r'\1', markdown)
         # Закрывающие: » ” ’
         markdown = re.sub(r'\s+([\u00bb\u201d\u2019])', r'\1', markdown)
+
+        # Убираем пробелы внутри **bold** (особенно при вложенных em/strong)
+        markdown = re.sub(r'\*\*[ \t]+([^*\n]+?)[ \t]*\*\*', r'**\1**', markdown)
+        markdown = re.sub(r'\*\*[ \t]*([^*\n]+?)[ \t]+\*\*', r'**\1**', markdown)
+
+        # Убираем пробелы внутри ***bold-italic***
+        markdown = re.sub(r'\*\*\*[ \t]+([^*\n]+?)[ \t]*\*\*\*', r'***\1***', markdown)
+        markdown = re.sub(r'\*\*\*[ \t]*([^*\n]+?)[ \t]+\*\*\*', r'***\1***', markdown)
 
 
         # Добавляем заголовок
