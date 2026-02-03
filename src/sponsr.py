@@ -3,6 +3,8 @@
 
 import json
 import re
+
+import re
 from urllib.parse import urljoin
 
 import requests
@@ -258,6 +260,13 @@ class SponsorDownloader(BaseDownloader):
         h2t.unicode_snob = True
 
         markdown = h2t.handle(html)
+
+        # Убираем лишние пробелы, добавленные html2text рядом с Unicode-кавычками
+        # Открывающие: « „ “ ‘
+        markdown = re.sub(r'([\u00ab\u201e\u201c\u2018])\s+', r'\1', markdown)
+        # Закрывающие: » ” ’
+        markdown = re.sub(r'\s+([\u00bb\u201d\u2019])', r'\1', markdown)
+
 
         # Добавляем заголовок
         return f"# {post.title}\n\n{markdown}"
