@@ -311,6 +311,38 @@ class SponsorDownloader(BaseDownloader):
         markdown = re.sub(r'\*\*\*[ \t]+([^*\n]+?)[ \t]*\*\*\*', r'***\1***', markdown)
         markdown = re.sub(r'\*\*\*[ \t]*([^*\n]+?)[ \t]+\*\*\*', r'***\1***', markdown)
 
+        # Восстанавливаем пробелы вокруг **...** и ***...***, если они потерялись
+        def _fix_emphasis_spacing(text: str, pattern: re.Pattern) -> str:
+            parts = []
+            last = 0
+            for match in pattern.finditer(text):
+                start, end = match.span()
+                parts.append(text[last:start])
+
+                if start > 0:
+                    prev = text[start - 1]
+                    if prev.isalnum() and not prev.isspace():
+                        if not (parts and parts[-1].endswith(' ')):
+                            parts.append(' ')
+
+                parts.append(text[start:end])
+
+                if end < len(text):
+                    next_char = text[end]
+                    if next_char.isalnum() and not next_char.isspace():
+                        parts.append(' ')
+
+                last = end
+
+            parts.append(text[last:])
+            return ''.join(parts)
+
+        markdown = _fix_emphasis_spacing(markdown, re.compile(r'\*\*\*.+?\*\*\*'))
+        markdown = _fix_emphasis_spacing(
+            markdown,
+            re.compile(r'(?<!\*)\*\*(?!\*).+?(?<!\*)\*\*(?!\*)'),
+        )
+
 
         # Добавляем заголовок
         return f"# {post.title}\n\n{markdown}"
