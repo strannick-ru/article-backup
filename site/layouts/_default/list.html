@@ -11,7 +11,7 @@
     {{ range .Pages.ByDate.Reverse }}
     <div class="post-item">
       <span class="date">{{ .Date.Format "2006-01-02" }}</span>
-      <a class="post-link" href="{{ .RelPermalink }}">{{ .Title }}</a>
+      <a class="post-link" href="{{ path.Base .RelPermalink }}/">{{ .Title }}</a>
     </div>
     {{ end }}
   </div>
