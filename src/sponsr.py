@@ -169,8 +169,18 @@ class SponsorDownloader(BaseDownloader):
         else:
             content_html = ''
 
-        # Теги
-        tags = raw_data.get('tags', [])
+        # Теги - извлекаем только имена из объектов
+        tags_raw = raw_data.get('tags', [])
+        tags = []
+        if isinstance(tags_raw, list):
+            for tag in tags_raw:
+                if isinstance(tag, dict):
+                    # API может вернуть объект с полем tag_name или tag.tag_name
+                    tag_name = tag.get('tag_name') or tag.get('tag', {}).get('tag_name')
+                    if tag_name:
+                        tags.append(tag_name)
+                elif isinstance(tag, str):
+                    tags.append(tag)
 
         # Извлекаем assets из HTML
         assets = self._extract_assets(content_html)
@@ -238,6 +248,20 @@ class SponsorDownloader(BaseDownloader):
 
         return str(soup)
 
+    def _cleanup_html(self, html: str) -> str:
+        """Предобработка HTML перед конвертацией в Markdown."""
+        from bs4 import BeautifulSoup
+        
+        soup = BeautifulSoup(html, 'lxml')
+        
+        # Удаляем пустые теги форматирования (содержат только пробелы/пустые)
+        for tag in soup.find_all(['b', 'strong', 'em', 'i']):
+            text = tag.get_text()
+            if not text or text.isspace():
+                tag.decompose()
+        
+        return str(soup)
+
     def _to_markdown(self, post: Post, asset_map: dict[str, str]) -> str:
         """Конвертирует HTML в Markdown."""
         if not post.content_html:
@@ -250,6 +274,9 @@ class SponsorDownloader(BaseDownloader):
 
         # Заменяем iframe/embed видео на markdown-ссылки
         html = self._replace_video_embeds(html)
+        
+        # Предобработка HTML
+        html = self._cleanup_html(html)
 
         # Конвертируем HTML в Markdown
         h2t = html2text.HTML2Text()
@@ -266,83 +293,57 @@ class SponsorDownloader(BaseDownloader):
         # Нормализуем неразрывные пробелы
         markdown = re.sub(r'[\u00a0\u202f]', ' ', markdown)
 
-        # Склеиваем разорванный курсив вокруг bold-italic (вложенные em/strong)
-        prev = None
-        pattern = re.compile(
-            r'_(?P<left>[^_\n]+?)_(?P<sep1>[ \t]*)\*\*(?P<space1>[ \t]*)_(?P<bold>[^_\n]+?)_'
-            r'(?P<space2>[ \t]*)\*\*(?P<sep2>[ \t]*)_(?P<right>[^_\n]+?)_'
-        )
-        while prev != markdown:
-            prev = markdown
-            markdown = pattern.sub(
-                r'_\g<left>\g<sep1>\g<space1>**\g<bold>**\g<space2>\g<sep2>\g<right>_',
-                markdown,
-            )
-
-        prev = None
-        pattern = re.compile(
-            r'\*(?P<left>[^*\n]+?)\*(?P<sep1>[ \t]*)\*\*(?P<space1>[ \t]*)\*(?P<bold>[^*\n]+?)\*'
-            r'(?P<space2>[ \t]*)\*\*(?P<sep2>[ \t]*)\*(?P<right>[^*\n]+?)\*'
-        )
-        while prev != markdown:
-            prev = markdown
-            markdown = pattern.sub(
-                r'*\g<left>\g<sep1>\g<space1>**\g<bold>**\g<space2>\g<sep2>\g<right>*',
-                markdown,
-            )
-
         # Склеиваем вложенные em/strong в жирный курсив
+        # html2text создаёт ** _текст_** или _**текст**_ для <b><em> (с пробелами)
         markdown = re.sub(r'\*\*\s*_(.+?)_\s*\*\*', r'***\1***', markdown)
         markdown = re.sub(r'_\s*\*\*(.+?)\*\*\s*_', r'***\1***', markdown)
-        markdown = re.sub(r'\*\*\s*\*(.+?)\*\s*\*\*', r'***\1***', markdown)
-        markdown = re.sub(r'\*\s*\*\*(.+?)\*\*\s*\*', r'***\1***', markdown)
+        
+        # Перемещаем форматирование внутрь ссылок
+        # [** _текст_**](url) → [***текст***](url)
+        markdown = re.sub(r'\[(\*{2,3})\s*(.+?)\s*(\*{2,3})\]\((.+?)\)', r'[\1\2\3](\4)', markdown)
+        # ***[текст](url)*** → [***текст***](url)
+        markdown = re.sub(r'(\*{2,3})\[(.+?)\]\((.+?)\)\1', r'[\1\2\1](\3)', markdown)
+        # _[текст](url)_ → [_текст_](url)
+        markdown = re.sub(r'_\[(.+?)\]\((.+?)\)_', r'[_\1_](\2)', markdown)
 
         # Убираем лишние пробелы, добавленные html2text рядом с Unicode-кавычками
-        # Открывающие: « „ “ ‘
+        # Открывающие: « „ " '
         markdown = re.sub(r'([\u00ab\u201e\u201c\u2018])\s+', r'\1', markdown)
-        # Закрывающие: » ” ’
+        # Закрывающие: » " '
         markdown = re.sub(r'\s+([\u00bb\u201d\u2019])', r'\1', markdown)
 
-        # Убираем пробелы внутри **bold** (особенно при вложенных em/strong)
-        markdown = re.sub(r'\*\*[ \t]+([^*\n]+?)[ \t]*\*\*', r'**\1**', markdown)
-        markdown = re.sub(r'\*\*[ \t]*([^*\n]+?)[ \t]+\*\*', r'**\1**', markdown)
-
-        # Убираем пробелы внутри ***bold-italic***
-        markdown = re.sub(r'\*\*\*[ \t]+([^*\n]+?)[ \t]*\*\*\*', r'***\1***', markdown)
-        markdown = re.sub(r'\*\*\*[ \t]*([^*\n]+?)[ \t]+\*\*\*', r'***\1***', markdown)
-
-        # Восстанавливаем пробелы вокруг **...** и ***...***, если они потерялись
-        def _fix_emphasis_spacing(text: str, pattern: re.Pattern) -> str:
+        # Восстанавливаем пробелы вокруг форматирования и ссылок
+        def _fix_spacing(text: str, pattern: re.Pattern) -> str:
+            """Добавляет пробелы вокруг элементов, если их нет."""
             parts = []
             last = 0
             for match in pattern.finditer(text):
                 start, end = match.span()
-                parts.append(text[last:start])
-
-                if start > 0:
-                    prev = text[start - 1]
-                    if prev.isalnum() and not prev.isspace():
-                        if not (parts and parts[-1].endswith(' ')):
-                            parts.append(' ')
-
-                parts.append(text[start:end])
-
-                if end < len(text):
-                    next_char = text[end]
-                    if next_char.isalnum() and not next_char.isspace():
-                        parts.append(' ')
-
+                before = text[last:start]
+                
+                # Добавляем пробел слева, если нужно
+                if start > 0 and before and before[-1].isalnum():
+                    before = before + ' '
+                
+                parts.append(before)
+                
+                # Добавляем сам матч
+                matched_text = text[start:end]
+                
+                # Добавляем пробел справа, если нужно
+                if end < len(text) and text[end].isalnum():
+                    matched_text = matched_text + ' '
+                
+                parts.append(matched_text)
                 last = end
 
             parts.append(text[last:])
             return ''.join(parts)
 
-        markdown = _fix_emphasis_spacing(markdown, re.compile(r'\*\*\*.+?\*\*\*'))
-        markdown = _fix_emphasis_spacing(
-            markdown,
-            re.compile(r'(?<!\*)\*\*(?!\*).+?(?<!\*)\*\*(?!\*)'),
-        )
-
+        # Восстанавливаем пробелы вокруг bold-italic, bold, ссылок
+        markdown = _fix_spacing(markdown, re.compile(r'\*\*\*.+?\*\*\*'))
+        markdown = _fix_spacing(markdown, re.compile(r'(?<!\*)\*\*(?!\*).+?(?<!\*)\*\*(?!\*)'))
+        markdown = _fix_spacing(markdown, re.compile(r'\[[^\]]+\]\([^)]+\)'))
 
         # Добавляем заголовок
         return f"# {post.title}\n\n{markdown}"
