@@ -26,8 +26,12 @@ CONTENT_TYPE_MAP = {
 }
 
 # Паттерны для внутренних ссылок
-SPONSR_LINK_PATTERN = re.compile(r'https?://sponsr\.ru/([^/]+)/(\d+)(?:/[^\s\)\]"\'<>]*)?')
-BOOSTY_LINK_PATTERN = re.compile(r'https?://boosty\.to/([^/]+)/posts/([a-f0-9-]+)(?:[^\s\)\]"\'<>]*)?')
+SPONSR_LINK_PATTERN = re.compile(
+    r'https?://sponsr\.ru/(?P<author>[^/]+)/(?P<post_id>\d+)(?:/[^\s\)\]"\'<>]*)?'
+)
+BOOSTY_LINK_PATTERN = re.compile(
+    r'https?://boosty\.to/(?P<author>[^/]+)/posts/(?P<post_id>[a-f0-9-]+)(?:[^\s\)\]"\'<>]*)?'
+)
 
 
 def transliterate(text: str) -> str:
@@ -144,17 +148,17 @@ def sanitize_filename(name: str) -> str:
     return name or 'unnamed'
 
 
-def extract_internal_links(content: str) -> list[tuple[str, str, str]]:
+def extract_internal_links(content: str) -> list[tuple[str, str, str, str]]:
     """
     Извлекает внутренние ссылки из контента.
-    Возвращает [(full_url, platform, post_id), ...]
+    Возвращает [(full_url, platform, author, post_id), ...]
     """
     links = []
 
     for match in SPONSR_LINK_PATTERN.finditer(content):
-        links.append((match.group(0), 'sponsr', match.group(2)))
+        links.append((match.group(0), 'sponsr', match.group('author'), match.group('post_id')))
 
     for match in BOOSTY_LINK_PATTERN.finditer(content):
-        links.append((match.group(0), 'boosty', match.group(2)))
+        links.append((match.group(0), 'boosty', match.group('author'), match.group('post_id')))
 
     return links

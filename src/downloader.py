@@ -4,6 +4,7 @@
 import hashlib
 import json
 import re
+import threading
 import time
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -22,7 +23,6 @@ from .utils import (
     should_download_asset,
     get_extension_from_content_type,
     transliterate,
-    sanitize_filename,
     extract_internal_links,
 )
 
@@ -248,8 +248,9 @@ class BaseDownloader(ABC):
         Скачивает assets параллельно.
         Возвращает маппинг {original_url: local_filename}.
         """
-        asset_map = {}
+        asset_map: dict[str, str] = {}
         used_filenames: set[str] = set()
+        used_lock = threading.Lock()
 
         def download_one(asset: dict) -> tuple[str, str | None]:
             url = asset["url"]
@@ -272,8 +273,21 @@ class BaseDownloader(ABC):
                 if not should_download_asset(url, content_type, self.source.asset_types):
                     return url, None
 
-                filename = self._make_asset_filename(url, content_type, asset.get('alt'))
-                filepath = assets_dir / filename
+                filename_base = self._make_asset_filename(url, content_type, asset.get('alt'))
+
+                with used_lock:
+                    filename = filename_base
+                    filepath = assets_dir / filename
+                    if filename in used_filenames or filepath.exists():
+                        filename = self._deduplicate_filename(filename, url)
+                        filepath = assets_dir / filename
+
+                    # На всякий случай добиваемся уникальности в рамках сессии
+                    while filename in used_filenames or filepath.exists():
+                        filename = self._deduplicate_filename(filename, url + filename)
+                        filepath = assets_dir / filename
+
+                    used_filenames.add(filename)
 
                 if not filepath.exists():
                     with open(filepath, 'wb') as f:
@@ -290,10 +304,6 @@ class BaseDownloader(ABC):
             for future in as_completed(futures):
                 url, filename = future.result()
                 if filename:
-                    # Дедупликация имён файлов
-                    if filename in used_filenames:
-                        filename = self._deduplicate_filename(filename, url)
-                    used_filenames.add(filename)
                     asset_map[url] = filename
 
         return asset_map
@@ -351,7 +361,11 @@ class BaseDownloader(ABC):
 
             original_body = body
 
-            for full_url, platform, post_id in extract_internal_links(body):
+            for full_url, platform, author, post_id in extract_internal_links(body):
+                if platform != self.PLATFORM:
+                    continue
+                if author != self.source.author:
+                    continue
                 if post_id in id_to_slug:
                     body = body.replace(full_url, f"../{id_to_slug[post_id]}/")
 
