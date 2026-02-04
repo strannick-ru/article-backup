@@ -58,6 +58,15 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_platform_author
             ON posts(platform, author)
         ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS sync_state (
+                platform TEXT NOT NULL,
+                author TEXT NOT NULL,
+                is_full_sync INTEGER DEFAULT 0,
+                last_sync_at TEXT,
+                UNIQUE(platform, author)
+            )
+        ''')
         conn.commit()
 
     def close(self):
@@ -167,3 +176,35 @@ class Database:
             tags=row['tags'],
             synced_at=row['synced_at'],
         )
+
+    def mark_full_sync(self, platform: str, author: str):
+        """Помечает архив как полностью синхронизированный."""
+        from datetime import datetime, timezone
+        conn = self._get_conn()
+        conn.execute('''
+            INSERT OR REPLACE INTO sync_state (platform, author, is_full_sync, last_sync_at)
+            VALUES (?, ?, 1, ?)
+        ''', (platform, author, datetime.now(timezone.utc).isoformat()))
+        conn.commit()
+
+    def is_full_sync(self, platform: str, author: str) -> bool:
+        """Проверяет, полностью ли синхронизирован архив."""
+        conn = self._get_conn()
+        cursor = conn.execute('''
+            SELECT is_full_sync FROM sync_state 
+            WHERE platform = ? AND author = ?
+        ''', (platform, author))
+        row = cursor.fetchone()
+        return bool(row and row[0])
+
+    def update_last_sync(self, platform: str, author: str):
+        """Обновляет время последней синхронизации."""
+        from datetime import datetime, timezone
+        conn = self._get_conn()
+        now = datetime.now(timezone.utc).isoformat()
+        conn.execute('''
+            INSERT INTO sync_state (platform, author, is_full_sync, last_sync_at)
+            VALUES (?, ?, 0, ?)
+            ON CONFLICT(platform, author) DO UPDATE SET last_sync_at = ?
+        ''', (platform, author, now, now))
+        conn.commit()

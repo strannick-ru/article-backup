@@ -33,7 +33,12 @@ class _DummyDownloader(BaseDownloader):
         # Tests patch session.get directly.
         return None
 
-    def fetch_posts_list(self):
+    def fetch_posts_list(
+        self,
+        existing_ids: set[str] | None = None,
+        incremental: bool = False,
+        safety_chunks: int = 1
+    ):
         raise NotImplementedError
 
     def fetch_post(self, post_id: str):

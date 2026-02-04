@@ -65,11 +65,24 @@ class SponsorDownloader(BaseDownloader):
         self._project_id = str(project_id)
         return self._project_id
 
-    def fetch_posts_list(self) -> list[dict]:
-        """Получает список всех постов через API."""
+    def fetch_posts_list(
+        self,
+        existing_ids: set[str] | None = None,
+        incremental: bool = False,
+        safety_chunks: int = 1
+    ) -> list[dict]:
+        """
+        Получает список постов через API.
+        
+        Args:
+            existing_ids: Множество уже загруженных post_id (для инкрементального режима)
+            incremental: Включить инкрементальный режим
+            safety_chunks: Количество "защитных" чанков перед остановкой
+        """
         project_id = self._get_project_id()
         all_posts = []
         offset = 0
+        clean_chunks_count = 0  # Счётчик "чистых" чанков
 
         while True:
             api_url = f"https://sponsr.ru/project/{project_id}/more-posts/?offset={offset}"
@@ -86,7 +99,24 @@ class SponsorDownloader(BaseDownloader):
             offset = len(all_posts)
 
             total = data.get("rows_count", 0)
-            print(f"  Получено {offset}/{total} постов...")
+
+            # Инкрементальный режим: проверяем, все ли посты уже существуют
+            if incremental and existing_ids is not None:
+                chunk_ids = {str(p.get('post_id')) for p in posts_chunk}
+                all_existing = chunk_ids.issubset(existing_ids)
+
+                if all_existing:
+                    clean_chunks_count += 1
+                    print(f"  Получено {offset}/{total} постов... (чанк уже скачан)")
+                    # Останавливаемся после safety_chunks + 1 (первый чистый + N защитных)
+                    if clean_chunks_count > safety_chunks:
+                        print(f"  ⚡ Остановлено на {offset} постах (все новые загружены)")
+                        break
+                else:
+                    clean_chunks_count = 0
+                    print(f"  Получено {offset}/{total} постов...")
+            else:
+                print(f"  Получено {offset}/{total} постов...")
 
         return all_posts
 

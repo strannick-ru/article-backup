@@ -98,8 +98,20 @@ class BaseDownloader(ABC):
         pass
 
     @abstractmethod
-    def fetch_posts_list(self) -> list[dict]:
-        """Получает список постов с API."""
+    def fetch_posts_list(
+        self,
+        existing_ids: set[str] | None = None,
+        incremental: bool = False,
+        safety_chunks: int = 1
+    ) -> list[dict]:
+        """
+        Получает список постов с API.
+        
+        Args:
+            existing_ids: Множество уже загруженных post_id (для инкрементального режима)
+            incremental: Включить инкрементальный режим
+            safety_chunks: Количество "защитных" чанков перед остановкой
+        """
         pass
 
     @abstractmethod
@@ -119,7 +131,16 @@ class BaseDownloader(ABC):
         self._create_index_files()
 
         existing_ids = self.db.get_all_post_ids(self.PLATFORM, self.source.author)
-        posts = self.fetch_posts_list()
+        is_full = self.db.is_full_sync(self.PLATFORM, self.source.author)
+
+        if is_full:
+            # Инкрементальная синхронизация
+            print("  Инкрементальный режим...")
+            posts = self.fetch_posts_list(existing_ids, incremental=True, safety_chunks=1)
+        else:
+            # Первый запуск или неполный архив
+            print("  Полная загрузка индекса...")
+            posts = self.fetch_posts_list()
 
         new_posts = [p for p in posts if str(p.get('id', p.get('post_id'))) not in existing_ids]
         print(f"  Найдено постов: {len(posts)}, новых: {len(new_posts)}")
@@ -133,6 +154,13 @@ class BaseDownloader(ABC):
         if new_posts:
             print(f"  Фиксим внутренние ссылки...")
             self.fix_internal_links()
+
+        # Помечаем архив как полный после успешной полной загрузки
+        if not is_full:
+            print("  ✓ Архив полностью синхронизирован")
+            self.db.mark_full_sync(self.PLATFORM, self.source.author)
+
+        self.db.update_last_sync(self.PLATFORM, self.source.author)
 
     def download_single(self, post_id: str):
         """Скачивает один пост по ID."""
