@@ -28,10 +28,23 @@ class BoostyDownloader(BaseDownloader):
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         })
 
-    def fetch_posts_list(self) -> list[dict]:
-        """Получает список всех постов через API."""
+    def fetch_posts_list(
+        self,
+        existing_ids: set[str] | None = None,
+        incremental: bool = False,
+        safety_chunks: int = 1
+    ) -> list[dict]:
+        """
+        Получает список постов через API.
+        
+        Args:
+            existing_ids: Множество уже загруженных post_id (для инкрементального режима)
+            incremental: Включить инкрементальный режим
+            safety_chunks: Количество "защитных" чанков перед остановкой
+        """
         all_posts = []
         offset = None
+        clean_chunks_count = 0  # Счётчик "чистых" чанков
 
         while True:
             url = f"{self.API_BASE}/blog/{self.source.author}/post/?limit=20"
@@ -48,7 +61,24 @@ class BoostyDownloader(BaseDownloader):
                 break
 
             all_posts.extend(posts_chunk)
-            print(f"  Получено {len(all_posts)} постов...")
+
+            # Инкрементальный режим: проверяем, все ли посты уже существуют
+            if incremental and existing_ids is not None:
+                chunk_ids = {p.get("id") for p in posts_chunk}
+                all_existing = chunk_ids.issubset(existing_ids)
+
+                if all_existing:
+                    clean_chunks_count += 1
+                    print(f"  Получено {len(all_posts)} постов... (чанк уже скачан)")
+                    # Останавливаемся после safety_chunks + 1 (первый чистый + N защитных)
+                    if clean_chunks_count > safety_chunks:
+                        print(f"  ⚡ Остановлено на {len(all_posts)} постах (все новые загружены)")
+                        break
+                else:
+                    clean_chunks_count = 0
+                    print(f"  Получено {len(all_posts)} постов...")
+            else:
+                print(f"  Получено {len(all_posts)} постов...")
 
             # Проверяем, есть ли ещё страницы
             extra = data.get("extra", {})
