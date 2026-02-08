@@ -176,9 +176,9 @@ class BoostyDownloader(BaseDownloader):
         try:
             blocks = json.loads(post.content_html)
         except json.JSONDecodeError:
-            return f"# {post.title}\n\n"
+            return ""
 
-        lines = [f"# {post.title}\n"]
+        lines: list[str] = []
 
         for block in blocks:
             md = self._block_to_markdown(block, asset_map)

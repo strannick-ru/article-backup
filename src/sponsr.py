@@ -280,22 +280,199 @@ class SponsorDownloader(BaseDownloader):
 
     def _cleanup_html(self, html: str) -> str:
         """Предобработка HTML перед конвертацией в Markdown."""
-        from bs4 import BeautifulSoup
-        
+        from bs4.element import NavigableString, Tag
+
         soup = BeautifulSoup(html, 'lxml')
         
         # Удаляем пустые теги форматирования (содержат только пробелы/пустые)
-        for tag in soup.find_all(['b', 'strong', 'em', 'i']):
+        for tag in reversed(list(soup.find_all(['b', 'strong', 'em', 'i']))):
+            # Важно: не удаляем теги, которые оборачивают другие теги,
+            # например <em><img/></em> или <strong><br/></strong>.
+            if tag.find(True) is not None:
+                continue
             text = tag.get_text()
             if not text or text.isspace():
                 tag.decompose()
+
+        # Нормализуем узкий паттерн:
+        #   <em>LEFT</em><a ...><em>MID</em></a><em>RIGHT</em>
+        # в:
+        #   <em>LEFT <a ...>MID</a> RIGHT</em>
+        # (пробелы/переводы строк между соседними тегами сохраняются)
+        def _is_ws_node(node: object) -> bool:
+            return isinstance(node, NavigableString) and not str(node).strip()
+
+        def _prev_non_ws_sibling(node: Tag) -> object | None:
+            sib = node.previous_sibling
+            while sib is not None and _is_ws_node(sib):
+                sib = sib.previous_sibling
+            return sib
+
+        def _next_non_ws_sibling(node: Tag) -> object | None:
+            sib = node.next_sibling
+            while sib is not None and _is_ws_node(sib):
+                sib = sib.next_sibling
+            return sib
+
+        def _starts_with_ws(text: str) -> bool:
+            return bool(text) and text[0].isspace()
+
+        def _needs_space_after(text: str) -> bool:
+            if not text:
+                return False
+            last = text[-1]
+            return last.isalnum() or last in ',;:'
+
+        def _needs_space_before(text: str) -> bool:
+            return bool(text) and text[0].isalnum()
+
+        def _rstrip_ws_to_nbsp(tag: Tag) -> None:
+            """Переносит хвостовые пробелы/табы в NBSP.
+
+            Важно: не трогаем переводы строк (\n), чтобы не "схлопывать"
+            намеренные переносы.
+            """
+            if not tag.contents:
+                return
+            last = tag.contents[-1]
+            if not isinstance(last, NavigableString):
+                return
+            s = str(last)
+            m = re.search(r'[ \t]+$', s)
+            if not m:
+                return
+            base = s[:m.start()]
+            if base:
+                last.replace_with(base)
+            else:
+                last.extract()
+            # bs4 создаст текстовый узел (NavigableString)
+            tag.append('\xa0')
+
+        def _lstrip_ws_to_nbsp(node: NavigableString) -> None:
+            s = str(node)
+            m = re.match(r'^[ \t]+', s)
+            if not m:
+                return
+            node.replace_with('\xa0' + s[m.end():])
+
+        for a in list(soup.find_all('a')):
+            left = _prev_non_ws_sibling(a)
+            right = _next_non_ws_sibling(a)
+            if not (isinstance(left, Tag) and left.name == 'em'):
+                continue
+            if not (isinstance(right, Tag) and right.name == 'em'):
+                continue
+
+            # Узко и безопасно: снаружи и внутри ссылки не допускаем вложенных тегов.
+            if left.find(True) is not None or right.find(True) is not None:
+                continue
+
+            inner_tags = [c for c in a.contents if isinstance(c, Tag)]
+            if len(inner_tags) != 1 or inner_tags[0].name != 'em':
+                continue
+            inner_em = inner_tags[0]
+            if inner_em.find(True) is not None:
+                continue
+            if any(
+                isinstance(c, NavigableString) and str(c).strip()
+                for c in a.contents
+                if not isinstance(c, Tag)
+            ):
+                continue
+
+            # Сохраняем поведение узким и безопасным: не сливаем,
+            # если атрибуты форматирования различаются.
+            left_attrs = dict(left.attrs or {})
+            mid_attrs = dict(inner_em.attrs or {})
+            right_attrs = dict(right.attrs or {})
+            if not (not left_attrs and not mid_attrs and not right_attrs):
+                if not (left_attrs == mid_attrs == right_attrs):
+                    continue
+
+            # Проверяем, что между em/a/em нет ничего кроме whitespace.
+            between_left_a: list[NavigableString] = []
+            node = left.next_sibling
+            ok = True
+            while node is not None and node is not a:
+                if not _is_ws_node(node):
+                    ok = False
+                    break
+                between_left_a.append(node)
+                node = node.next_sibling
+            if not ok or node is None:
+                continue
+
+            between_a_right: list[NavigableString] = []
+            node = a.next_sibling
+            while node is not None and node is not right:
+                if not _is_ws_node(node):
+                    ok = False
+                    break
+                between_a_right.append(node)
+                node = node.next_sibling
+            if not ok or node is None:
+                continue
+
+            left_text = left.get_text() or ''
+            mid_text = inner_em.get_text() or ''
+            right_text = right.get_text() or ''
+
+            import copy
+
+            new_em = soup.new_tag('em')
+            new_em.attrs = copy.deepcopy(left.attrs)
+
+            for child in list(left.contents):
+                new_em.append(child.extract())
+            for n in between_left_a:
+                new_em.append(n.extract())
+
+            # Если пробел был в конце LEFT или между тегами, сохраняем его как NBSP,
+            # чтобы html2text не "съел" его перед ссылкой.
+            _rstrip_ws_to_nbsp(new_em)
+            # Если пробела нет, но он нужен между словами, добавляем NBSP.
+            if (
+                not between_left_a
+                and not _starts_with_ws(mid_text)
+                and _needs_space_after(left_text)
+                and _needs_space_before(mid_text)
+            ):
+                new_em.append('\xa0')
+
+            inner_em.unwrap()  # <a><em>..</em></a> -> <a>..</a>
+            new_em.append(a.extract())
+
+            for n in between_a_right:
+                new_em.append(n.extract())
+
+            # Сохраняем возможные пробелы между </a> и RIGHT.
+            _rstrip_ws_to_nbsp(new_em)
+
+            # Если RIGHT начинается с пробела/таба, превратим его в NBSP.
+            if right.contents and isinstance(right.contents[0], NavigableString):
+                _lstrip_ws_to_nbsp(right.contents[0])
+
+            # Если пробела нет, но он нужен между словами, добавляем NBSP.
+            if (
+                not between_a_right
+                and not _starts_with_ws(right_text)
+                and (mid_text and mid_text[-1].isalnum())
+                and (right_text and right_text[0].isalnum())
+            ):
+                new_em.append('\xa0')
+            for child in list(right.contents):
+                new_em.append(child.extract())
+
+            left.replace_with(new_em)
+            right.extract()
         
         return str(soup)
 
     def _to_markdown(self, post: Post, asset_map: dict[str, str]) -> str:
         """Конвертирует HTML в Markdown."""
         if not post.content_html:
-            return f"# {post.title}\n\n"
+            return ""
 
         # Заменяем URL изображений на локальные
         html = post.content_html
@@ -342,38 +519,137 @@ class SponsorDownloader(BaseDownloader):
         # Закрывающие: » " '
         markdown = re.sub(r'\s+([\u00bb\u201d\u2019])', r'\1', markdown)
 
-        # Восстанавливаем пробелы вокруг форматирования и ссылок
-        def _fix_spacing(text: str, pattern: re.Pattern) -> str:
-            """Добавляет пробелы вокруг элементов, если их нет."""
-            parts = []
-            last = 0
-            for match in pattern.finditer(text):
-                start, end = match.span()
-                before = text[last:start]
-                
-                # Добавляем пробел слева, если нужно
-                if start > 0 and before and before[-1].isalnum():
-                    before = before + ' '
-                
-                parts.append(before)
-                
-                # Добавляем сам матч
-                matched_text = text[start:end]
-                
-                # Добавляем пробел справа, если нужно
-                if end < len(text) and text[end].isalnum():
-                    matched_text = matched_text + ' '
-                
-                parts.append(matched_text)
-                last = end
+        # Консервативная чистка пробелов вокруг Markdown-конструкций.
+        # Принцип: не добавлять пробелы "вслепую" (и тем более внутри слов),
+        # а исправлять только узкие артефакты html2text/предобработки.
+        def _cleanup_spacing(text: str) -> str:
+            # 1) Убираем пробелы внутри квадратных скобок ссылки, когда там есть форматирование.
+            #    [ _Конан_ ] -> [_Конан_]
+            text = re.sub(r'\[[ \t]+([_*])', r'[\1', text)
+            text = re.sub(r'([_*])[ \t]+\]', r'\1]', text)
 
-            parts.append(text[last:])
-            return ''.join(parts)
+            # 1.5) Тримим пробелы/табы сразу внутри маркеров emphasis.
+            # html2text иногда создаёт `_ текст _` (например, когда пробелы идут отдельными узлами span/NBSP).
+            def _trim_em_inner(delim: str, inner: str) -> str:
+                trimmed = inner.strip(' \t')
+                return f"{delim}{trimmed}{delim}" if trimmed else f"{delim}{inner}{delim}"
 
-        # Восстанавливаем пробелы вокруг bold-italic, bold, ссылок
-        markdown = _fix_spacing(markdown, re.compile(r'\*\*\*.+?\*\*\*'))
-        markdown = _fix_spacing(markdown, re.compile(r'(?<!\*)\*\*(?!\*).+?(?<!\*)\*\*(?!\*)'))
-        markdown = _fix_spacing(markdown, re.compile(r'\[[^\]]+\]\([^)]+\)'))
+            text = re.sub(r'\*\*\*([^*\n]+?)\*\*\*', lambda m: _trim_em_inner('***', m.group(1)), text)
+            text = re.sub(r'(?<!\*)\*\*([^*\n]+?)\*\*(?!\*)', lambda m: _trim_em_inner('**', m.group(1)), text)
+            text = re.sub(r'(?<!\*)\*([^*\n]+?)\*(?!\*)', lambda m: _trim_em_inner('*', m.group(1)), text)
+            text = re.sub(r'_([^_\n]+?)_', lambda m: _trim_em_inner('_', m.group(1)), text)
 
-        # Добавляем заголовок
-        return f"# {post.title}\n\n{markdown}"
+            # 2) Убираем пробелы перед пунктуацией сразу после закрывающего форматирования.
+            #    ***...*** : -> ***...***:
+            emphasis_span = r'(?:\*\*\*[^*\n]+?\*\*\*|\*\*[^*\n]+?\*\*|_[^_\n]+?_|\*[^*\n]+?\*)'
+            text = re.sub(rf'({emphasis_span})[ \t]+([:;,.!?])', r'\1\2', text)
+
+            word_char = r'[0-9A-Za-zА-Яа-яЁё]'
+
+            # 3) html2text иногда "съедает" пробел перед **жирным** внутри _курсива_.
+            #    _курсив**жирный** курсив_ -> _курсив **жирный** курсив_
+            def _fix_bold_spacing_inside_underscore_italic(m: re.Match) -> str:
+                inner = m.group('inner')
+                inner = re.sub(
+                    rf'(?P<l>{word_char})\*\*(?P<b>[^*\n]+?)\*\*(?=[ \t]+{word_char})',
+                    r'\g<l> **\g<b>**',
+                    inner,
+                )
+                return f"_{inner}_"
+
+            text = re.sub(r'_(?P<inner>[^_\n]+?)_', _fix_bold_spacing_inside_underscore_italic, text)
+
+            # 4) Склеиваем разорванные слова, когда форматирование находится внутри слова.
+            #    п ***о*** том -> п***о***том
+            # Варианты артефактов: пробелы могут быть с обеих сторон или только с одной.
+            inside_word_both = re.compile(rf'(?P<l>{word_char})[ \t]+(?P<em>{emphasis_span})[ \t]+(?P<r>{word_char})')
+            inside_word_left = re.compile(rf'(?P<l>{word_char})[ \t]+(?P<em>{emphasis_span})(?P<r>{word_char})')
+            inside_word_right = re.compile(rf'(?P<l>{word_char})(?P<em>{emphasis_span})[ \t]+(?P<r>{word_char})')
+            common_one_letter_words = {
+                # ru
+                'и', 'а', 'я', 'о', 'у', 'в', 'к', 'с',
+                # en
+                'a', 'i',
+            }
+
+            def _em_inner(em: str) -> str:
+                for pre, suf in (("***", "***"), ("**", "**"), ("_", "_"), ("*", "*")):
+                    if em.startswith(pre) and em.endswith(suf) and len(em) >= len(pre) + len(suf):
+                        return em[len(pre) : -len(suf)]
+                return em
+
+            def _is_short_emphasis(em: str) -> bool:
+                inner = _em_inner(em).strip()
+                if re.search(r'\s', inner):
+                    return False
+                return re.fullmatch(rf'{word_char}{{1,3}}', inner) is not None
+
+            def _join_if_inside_word(m: re.Match, *, require_short: bool) -> str:
+                l = m.group('l')
+                r = m.group('r')
+
+                if require_short and not _is_short_emphasis(m.group('em')):
+                    return m.group(0)
+
+                # Если слева односимвольное слово ("и", "а", "в"...),
+                # лучше не склеивать: высок риск "починить" авторский текст.
+                i = m.start('l')
+                prev = text[i - 1] if i > 0 else ''
+                if (i == 0 or prev.isspace()) and l.lower() in common_one_letter_words:
+                    return m.group(0)
+
+                return f"{l}{m.group('em')}{r}"
+
+            text = inside_word_both.sub(lambda m: _join_if_inside_word(m, require_short=True), text)
+            text = inside_word_left.sub(lambda m: _join_if_inside_word(m, require_short=False), text)
+            # Если слева форматирование уже приклеено к слову, а пробел остался справа,
+            # это почти наверняка разрыв одного слова.
+            text = inside_word_right.sub(lambda m: _join_if_inside_word(m, require_short=False), text)
+
+            # 5) Добавляем пропущенный пробел после запятой перед ссылкой.
+            #    кинополотна,[Конан](...) -> кинополотна, [Конан](...)
+            text = re.sub(r',[ \t]*(\[[^\]]+\]\([^)]+\))', r', \1', text)
+
+            # 6) Разделяем слова и markdown-ссылки, если они "слиплись".
+            #    подтвердилa[...](...)и -> подтвердилa [...](...) и
+            link = r'(?:\[[^\]]+\]\([^)]+\))'
+            text = re.sub(rf'({word_char})({link})', r'\1 \2', text)
+            text = re.sub(rf'({link})({word_char})', r'\1 \2', text)
+
+            return text
+
+        markdown = _cleanup_spacing(markdown)
+
+        # Markdown (CommonMark/Goldmark): `_em_` внутри слова часто НЕ рендерится как курсив.
+        # Если курсив "вшит" в слово (буква + _..._ + буква), иногда нужно переводить в `*...*`.
+        # Правило (консервативно):
+        # - всегда конвертируем, если внутри есть пробелы/markdown-маркеры (типичный вывод html2text);
+        # - дополнительно конвертируем одно-трёхбуквенные вставки кириллицы, если контекст кириллический
+        #   (например: п_о_том -> п*о*том), чтобы Goldmark не игнорировал курсив.
+        word_char = r'[0-9A-Za-zА-Яа-яЁё]'
+        intraword_underscore_italic = re.compile(
+            rf'(?P<l>{word_char})_(?P<inner>[^_\n]+?)_(?P<r>{word_char})'
+        )
+
+        def _intraword_underscore_to_asterisk(m: re.Match) -> str:
+            l = m.group('l')
+            inner = m.group('inner')
+            r = m.group('r')
+            # Защита от ложных срабатываний на литералах с подчёркиваниями (foo_bar_baz).
+            # Конвертируем только когда это очень похоже на курсив из html2text:
+            # внутри обычно есть пробелы и/или markdown-маркеры (например '**' или '[...]').
+            looks_like_html2text_em = any(ch.isspace() for ch in inner) or '*' in inner or '[' in inner
+
+            # Спец-случай: одна-три кириллические буквы внутри кириллического контекста.
+            # Это безопаснее, чем конвертировать любые короткие вставки, и не ломает foo_bar_baz.
+            cyr = r'[А-Яа-яЁё]'
+            has_cyr_context = re.search(cyr, f"{l}{inner}{r}") is not None
+            is_short_cyr_inner = re.fullmatch(rf'{cyr}{{1,3}}', inner) is not None
+
+            if not (looks_like_html2text_em or (has_cyr_context and is_short_cyr_inner)):
+                return m.group(0)
+            return f"{l}*{inner}*{r}"
+
+        markdown = intraword_underscore_italic.sub(_intraword_underscore_to_asterisk, markdown)
+
+        return markdown
