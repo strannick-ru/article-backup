@@ -179,21 +179,53 @@ class BoostyDownloader(BaseDownloader):
             return ""
 
         # Заголовок берётся из frontmatter (Hugo), не дублируем его в body.
+        # Inline-блоки (text, link) между BLOCK_END конкатенируются в один параграф.
+        # BLOCK_END завершает параграф. Block-level элементы разрывают параграф.
         lines: list[str] = []
+        current_paragraph: list[str] = []
+        paragraph_offset: int = 0
 
         for block in blocks:
-            md = self._block_to_markdown(block, asset_map)
-            if md:
+            block_type = block.get("type", "")
+            modificator = block.get("modificator", "")
+
+            # BLOCK_END завершает параграф
+            if modificator == "BLOCK_END":
+                if current_paragraph:
+                    lines.append("".join(current_paragraph))
+                    current_paragraph = []
+                lines.append("")
+                paragraph_offset = 0
+                continue
+
+            md = self._block_to_markdown(block, asset_map, paragraph_offset)
+            if not md:
+                continue
+
+            # Block-level элементы разрывают параграф
+            if block_type in ("image", "audio_file", "ok_video"):
+                if current_paragraph:
+                    lines.append("".join(current_paragraph))
+                    current_paragraph = []
                 lines.append(md)
+                paragraph_offset = 0
+            else:
+                # Inline-элементы (text, link) — в текущий параграф
+                current_paragraph.append(md)
+                paragraph_offset += self._block_text_length(block)
+
+        # Не забыть незавершённый параграф
+        if current_paragraph:
+            lines.append("".join(current_paragraph))
 
         return "\n".join(lines).strip() + "\n" if lines else ""
 
-    def _block_to_markdown(self, block: dict, asset_map: dict[str, str]) -> str:
+    def _block_to_markdown(self, block: dict, asset_map: dict[str, str], paragraph_offset: int = 0) -> str:
         """Конвертирует один блок в Markdown."""
         block_type = block.get("type", "")
 
         if block_type == "text":
-            return self._parse_text_block(block)
+            return self._parse_text_block(block, paragraph_offset)
 
         elif block_type == "image":
             url = block.get("url", "")
@@ -205,7 +237,7 @@ class BoostyDownloader(BaseDownloader):
 
         elif block_type == "link":
             url = block.get("url", "")
-            text = self._parse_text_block(block)
+            text = self._parse_text_block(block, paragraph_offset)
             if text and url:
                 return f"[{text}]({url})"
             elif url:
@@ -226,14 +258,15 @@ class BoostyDownloader(BaseDownloader):
 
         return ""
 
-    def _parse_text_block(self, block: dict) -> str:
-        """Парсит текстовый блок Boosty."""
+    def _parse_text_block(self, block: dict, paragraph_offset: int = 0) -> str:
+        """Парсит текстовый блок Boosty.
+        
+        Args:
+            block: Блок контента
+            paragraph_offset: Смещение начала блока в текущем параграфе (для коррекции стилей)
+        """
         content = block.get("content", "")
-        modificator = block.get("modificator", "")
-
-        # BLOCK_END — разделитель параграфов
-        if modificator == "BLOCK_END":
-            return "\n"
+        # BLOCK_END обрабатывается в _to_markdown, здесь он не нужен
 
         if not content:
             return ""
@@ -246,13 +279,33 @@ class BoostyDownloader(BaseDownloader):
 
                 # Применяем стили, если есть
                 if len(parsed) >= 3 and parsed[2]:
-                    text = self._apply_styles(text, parsed[2])
+                    styles = parsed[2]
+                    # Корректируем глобальные позиции стилей в локальные
+                    if paragraph_offset > 0:
+                        styles = [
+                            [s[0], s[1] - paragraph_offset, s[2]]
+                            for s in styles if len(s) >= 3
+                        ]
+                    text = self._apply_styles(text, styles)
 
                 return text
         except (json.JSONDecodeError, IndexError, TypeError):
             return content
 
         return ""
+
+    def _block_text_length(self, block: dict) -> int:
+        """Возвращает длину сырого текста блока (до стилизации)."""
+        content = block.get("content", "")
+        if not content:
+            return 0
+        try:
+            parsed = json.loads(content)
+            if isinstance(parsed, list) and len(parsed) >= 1:
+                return len(str(parsed[0]))
+        except (json.JSONDecodeError, IndexError, TypeError):
+            pass
+        return 0
 
     def _apply_styles(self, text: str, styles: list) -> str:
         """Применяет стили к тексту (bold, italic)."""
@@ -277,10 +330,16 @@ class BoostyDownloader(BaseDownloader):
             fragment = result[start:end]
 
             # Типы стилей (примерные, на основе анализа)
-            if style_type == 1:  # bold
-                styled = f"**{fragment}**"
-            elif style_type == 2:  # italic
-                styled = f"*{fragment}*"
+            if style_type in (1, 2):
+                # Выносим пробелы наружу маркеров: "*текст *" → "*текст* "
+                stripped = fragment.strip()
+                if not stripped:
+                    styled = fragment  # только пробелы — не оборачиваем
+                else:
+                    leading = fragment[:len(fragment) - len(fragment.lstrip())]
+                    trailing = fragment[len(fragment.rstrip()):]
+                    marker = "**" if style_type == 1 else "*"
+                    styled = f"{leading}{marker}{stripped}{marker}{trailing}"
             elif style_type == 4:  # ссылка (обрабатывается в link блоках)
                 styled = fragment
             else:

@@ -149,5 +149,24 @@ class SponsorNormalizeTests(unittest.TestCase):
         self.assertRegex(result, r'\]\(https://sponsr\.ru/dicelords/119132/Kosmiiicheskoe_zoloto\)\s+и другие')
 
 
+    def test_whitespace_preserved_after_link(self):
+        """Тест сохранения пробела из <em> </em> после ссылки."""
+        post = Post(
+            post_id='1',
+            title='Test',
+            content_html='<p>что в <a href="https://www.google.com/search?q=test" target="_blank"><em>актах</em></a><em> </em>(то есть</p>',
+            post_date='2025-01-01',
+            source_url='https://test.com',
+            tags=[],
+            assets=[]
+        )
+        
+        result = self.downloader._to_markdown(post, {})
+        
+        # Пробел между ссылкой и скобкой не должен теряться
+        self.assertNotIn('](https://www.google.com/search?q=test)(то', result)
+        self.assertIn(') (то есть', result)
+
+
 if __name__ == '__main__':
     unittest.main()
