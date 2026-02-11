@@ -287,8 +287,10 @@ class SponsorDownloader(BaseDownloader):
         # Удаляем пустые теги форматирования (содержат только пробелы/пустые)
         for tag in soup.find_all(['b', 'strong', 'em', 'i']):
             text = tag.get_text()
-            if not text or text.isspace():
+            if not text:
                 tag.decompose()
+            elif text.isspace():
+                tag.replace_with(text)
         
         return str(soup)
 
