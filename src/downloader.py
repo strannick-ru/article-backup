@@ -193,7 +193,19 @@ class BaseDownloader(ABC):
         posts_dir = author_dir / "posts"
         posts_dir.mkdir(parents=True, exist_ok=True)
         posts_index = posts_dir / "_index.md"
-        posts_index.write_text(f'---\ntitle: "Посты"\n---\n', encoding='utf-8')
+        # RSS на уровне /{platform}/{author}/posts/ должен быть "про автора",
+        # а не про абстрактную секцию "Посты".
+        # title: author из config.yaml, description: display_name (если есть).
+        posts_title = self.source.author.replace('"', '\\"')
+        posts_desc = self.source.display_name or self.source.author
+        safe_posts_desc = posts_desc.replace('"', '\\"')
+        posts_index.write_text(
+            f'---\n'
+            f'title: "{posts_title}"\n'
+            f'description: "{safe_posts_desc}"\n'
+            f'---\n',
+            encoding='utf-8'
+        )
 
     def _save_post(self, post: Post):
         """Сохраняет пост на диск."""

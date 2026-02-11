@@ -176,16 +176,17 @@ class BoostyDownloader(BaseDownloader):
         try:
             blocks = json.loads(post.content_html)
         except json.JSONDecodeError:
-            return f"# {post.title}\n\n"
+            return ""
 
-        lines = [f"# {post.title}\n"]
+        # Заголовок берётся из frontmatter (Hugo), не дублируем его в body.
+        lines: list[str] = []
 
         for block in blocks:
             md = self._block_to_markdown(block, asset_map)
             if md:
                 lines.append(md)
 
-        return "\n".join(lines)
+        return "\n".join(lines).strip() + "\n" if lines else ""
 
     def _block_to_markdown(self, block: dict, asset_map: dict[str, str]) -> str:
         """Конвертирует один блок в Markdown."""
