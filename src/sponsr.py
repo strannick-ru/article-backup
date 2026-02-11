@@ -295,7 +295,7 @@ class SponsorDownloader(BaseDownloader):
     def _to_markdown(self, post: Post, asset_map: dict[str, str]) -> str:
         """Конвертирует HTML в Markdown."""
         if not post.content_html:
-            return f"# {post.title}\n\n"
+            return ""
 
         # Заменяем URL изображений на локальные
         html = post.content_html
@@ -375,5 +375,5 @@ class SponsorDownloader(BaseDownloader):
         markdown = _fix_spacing(markdown, re.compile(r'(?<!\*)\*\*(?!\*).+?(?<!\*)\*\*(?!\*)'))
         markdown = _fix_spacing(markdown, re.compile(r'\[[^\]]+\]\([^)]+\)'))
 
-        # Добавляем заголовок
-        return f"# {post.title}\n\n{markdown}"
+        # Заголовок берётся из frontmatter (Hugo), не дублируем его в body.
+        return markdown
