@@ -126,7 +126,7 @@ class SponsorNormalizeTests(unittest.TestCase):
         post = Post(
             post_id='1',
             title='Test',
-            content_html='<p>подтвердила<b><em> </em></b><a href="https://sponsr.ru/dicelords/119132/Kosmiiicheskoe_zoloto" target="_blank"><b><em>космическая спутниковая разведка </em></b></a>и другие</p>',
+            content_html='<p>подтвердила<b><em> </em></b><a href="https://sponsr.ru/test_author/119132/test_post" target="_blank"><b><em>космическая спутниковая разведка </em></b></a>и другие</p>',
             post_date='2025-01-01',
             source_url='https://test.com',
             tags=[],
@@ -136,7 +136,7 @@ class SponsorNormalizeTests(unittest.TestCase):
         result = self.downloader._to_markdown(post, {})
         
         # Должна быть ссылка с форматированием внутри: [***текст***](url)
-        self.assertIn('[***космическая спутниковая разведка***](https://sponsr.ru/dicelords/119132/Kosmiiicheskoe_zoloto)', result)
+        self.assertIn('[***космическая спутниковая разведка***](https://sponsr.ru/test_author/119132/test_post)', result)
         
         # Не должно быть лишних звездочек снаружи
         self.assertNotIn('******[', result)
@@ -146,7 +146,7 @@ class SponsorNormalizeTests(unittest.TestCase):
         # Пробелы должны быть корректными
         self.assertIn('подтвердила [***', result)
         # После ссылки должен быть пробел перед "и другие"
-        self.assertRegex(result, r'\]\(https://sponsr\.ru/dicelords/119132/Kosmiiicheskoe_zoloto\)\s+и другие')
+        self.assertRegex(result, r'\]\(https://sponsr\.ru/test_author/119132/test_post\)\s+и другие')
 
 
     def test_whitespace_preserved_after_link(self):
@@ -166,6 +166,143 @@ class SponsorNormalizeTests(unittest.TestCase):
         # Пробел между ссылкой и скобкой не должен теряться
         self.assertNotIn('](https://www.google.com/search?q=test)(то', result)
         self.assertIn(') (то есть', result)
+
+    def test_italic_trailing_space_moved_outside(self):
+        """Проблема 2: пробел в конце <em> выносится наружу маркера.
+        
+        HTML: себя <em>не таким как все </em>(которого не проведёшь)?
+        Плохо: себя  _не таким как все _(которого
+        Хорошо: себя _не таким как все_ (которого
+        """
+        post = Post(
+            post_id='1',
+            title='Test',
+            content_html='<p>себя <em>не таким как все </em>(которого не проведёшь)?</p>',
+            post_date='2025-01-01',
+            source_url='https://test.com',
+            tags=[],
+            assets=[]
+        )
+        
+        result = self.downloader._to_markdown(post, {})
+        
+        # Закрывающий маркер должен быть прижат к тексту
+        self.assertIn('_не таким как все_', result)
+        # Пробел перед закрывающим маркером — невалидный markdown
+        self.assertNotIn('все _', result)
+        # Пробел между italic и скобкой должен сохраниться
+        self.assertIn('все_ (которого', result)
+
+    def test_italic_across_paragraphs(self):
+        """Проблема 3: italic через границу абзацев.
+        
+        HTML: В.М.).</em></p><p><em>Метеоролог ... отвергает. </em></p><p><em>Однако
+        Плохо: В.М.)._\\n\\n_Метеоролог ... отвергает. _\\n\\n _Однако
+        Хорошо: В.М.)._\\n\\n_Метеоролог ... отвергает._\\n\\n_Однако
+        """
+        post = Post(
+            post_id='1',
+            title='Test',
+            content_html='<p><em>В.М.).</em></p><p><em>Метеоролог Крис Марц сказал, что климатология полна неопределенности и нюансов, которые «Неудобная правда» полностью отвергает. </em></p><p><em>Однако фильм поднимает важные вопросы.</em></p>',
+            post_date='2025-01-01',
+            source_url='https://test.com',
+            tags=[],
+            assets=[]
+        )
+        
+        result = self.downloader._to_markdown(post, {})
+        
+        # Закрывающие маркеры должны быть прижаты к тексту
+        self.assertNotIn('отвергает. _', result)
+        self.assertIn('отвергает._', result)
+        # Открывающие маркеры тоже должны быть прижаты (нет пробела между _ и текстом)
+        self.assertNotIn('_ Однако', result)
+        self.assertNotIn('_ Метеоролог', result)
+        # _Метеоролог — корректный italic
+        self.assertIn('_Метеоролог', result)
+
+    def test_italic_bold_italic_in_link(self):
+        """Проблема 1: italic + bold-italic внутри ссылки с trailing пробелами.
+        
+        HTML: «<em>39 лет ... пишу: </em><a href="..."><em>вы </em><b><em>обязаны</em></b><em> это посмотреть</em></a>»
+        Плохо: «_39 лет ... пишу: _[ _вы ****обязаны****это посмотреть_](...)»
+        """
+        post = Post(
+            post_id='1',
+            title='Test',
+            content_html='<p>сформулировал: «<em>39 лет я никогда не писал этих слов в отзыве на кино, а сейчас пишу: </em><a href="https://example.com/article" target="_blank"><em>вы </em><b><em>обязаны</em></b><em> это посмотреть</em></a>».</p>',
+            post_date='2025-01-01',
+            source_url='https://test.com',
+            tags=[],
+            assets=[]
+        )
+        
+        result = self.downloader._to_markdown(post, {})
+        
+        # Не должно быть 4+ звёздочек
+        self.assertNotIn('****', result)
+        # Закрывающий _ не должен иметь пробел перед ним
+        self.assertNotIn('пишу: _', result)
+        # Внутри ссылки italic/bold-italic должны быть валидны
+        # Пробел между "вы" и "обязаны" не должен теряться
+        self.assertIn('обязаны', result)
+        self.assertIn('это посмотреть', result)
+        # Не должно быть _[ _вы
+        self.assertNotIn('_[ _', result)
+
+    def test_nested_identical_tags_merged(self):
+        """Тест слияния вложенных одинаковых тегов: <em><em>text</em></em> → <em>text</em>."""
+        post = Post(
+            post_id='1',
+            title='Test',
+            content_html='<p>перед <em><em>двойной курсив</em></em> после</p>',
+            post_date='2025-01-01',
+            source_url='https://test.com',
+            tags=[],
+            assets=[]
+        )
+        
+        result = self.downloader._to_markdown(post, {})
+        
+        # Должен быть одинарный курсив, без артефактов
+        self.assertIn('_двойной курсив_', result)
+        self.assertNotIn('__', result)
+
+    def test_italic_leading_space_moved_outside(self):
+        """Тест выноса leading пробела из italic наружу."""
+        post = Post(
+            post_id='1',
+            title='Test',
+            content_html='<p>текст<em> курсив</em> продолжение</p>',
+            post_date='2025-01-01',
+            source_url='https://test.com',
+            tags=[],
+            assets=[]
+        )
+        
+        result = self.downloader._to_markdown(post, {})
+        
+        # Пробел должен быть снаружи, а не внутри маркера
+        self.assertIn('текст _курсив_', result)
+        self.assertNotIn('текст_ курсив_', result)
+
+    def test_quadruple_asterisks_normalized(self):
+        """Тест нормализации ****text**** → ***text*** в markdown."""
+        post = Post(
+            post_id='1',
+            title='Test',
+            content_html='<p>перед <b><em><em>слово</em></em></b> после</p>',
+            post_date='2025-01-01',
+            source_url='https://test.com',
+            tags=[],
+            assets=[]
+        )
+        
+        result = self.downloader._to_markdown(post, {})
+        
+        # Не должно быть 4+ звёздочек
+        self.assertNotIn('****', result)
+        self.assertIn('слово', result)
 
 
 if __name__ == '__main__':
