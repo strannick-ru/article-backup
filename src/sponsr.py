@@ -280,19 +280,93 @@ class SponsorDownloader(BaseDownloader):
 
     def _cleanup_html(self, html: str) -> str:
         """Предобработка HTML перед конвертацией в Markdown."""
-        from bs4 import BeautifulSoup
+        from bs4 import BeautifulSoup, NavigableString
         
         soup = BeautifulSoup(html, 'lxml')
         
-        # Удаляем пустые теги форматирования (содержат только пробелы/пустые)
-        for tag in soup.find_all(['b', 'strong', 'em', 'i']):
+        # 1. Слияние вложенных одинаковых тегов: <em><em>text</em></em> → <em>text</em>
+        #    Также обрабатывает эквиваленты: <b><strong>, <em><i> и т.п.
+        equivalent_tags = {'b': 'strong', 'strong': 'b', 'em': 'i', 'i': 'em'}
+        for tag in list(soup.find_all(['b', 'strong', 'em', 'i'])):
+            if tag.parent is None:
+                continue
+            # Проверяем: тег содержит ровно один дочерний элемент того же типа
+            children = list(tag.children)
+            if len(children) == 1 and hasattr(children[0], 'name'):
+                child = children[0]
+                equiv = equivalent_tags.get(tag.name)
+                if child.name == tag.name or child.name == equiv:
+                    # Разворачиваем внутренний тег, оставляя внешний
+                    child.unwrap()
+        
+        # 2. Удаляем пустые теги форматирования и выносим пробелы наружу
+        for tag in list(soup.find_all(['b', 'strong', 'em', 'i'])):
+            if tag.parent is None:
+                continue
             text = tag.get_text()
             if not text:
                 tag.decompose()
             elif text.isspace():
                 tag.replace_with(text)
+            else:
+                # Вынос leading пробелов из тега наружу (перед тегом)
+                first_text = self._first_navigable_string(tag)
+                if first_text is not None and first_text.lstrip() != first_text:
+                    leading = first_text[:len(first_text) - len(first_text.lstrip())]
+                    first_text.replace_with(first_text.lstrip())
+                    tag.insert_before(NavigableString(leading))
+                
+                # Вынос trailing пробелов из тега наружу (после тега)
+                last_text = self._last_navigable_string(tag)
+                if last_text is not None and last_text.rstrip() != last_text:
+                    trailing = last_text[len(last_text.rstrip()):]
+                    last_text.replace_with(last_text.rstrip())
+                    tag.insert_after(NavigableString(trailing))
+        
+        # 3. Вынос trailing/leading пробелов из <a> тегов наружу
+        #    После выноса пробелов из formatting тегов, пробел может остаться
+        #    внутри <a> (но вне <em>/<b>), что даёт [текст ](url) в markdown
+        for tag in list(soup.find_all('a')):
+            if tag.parent is None:
+                continue
+            # Trailing: проверяем последний дочерний узел (может быть голый пробел)
+            children = list(tag.children)
+            if children:
+                last_child = children[-1]
+                if isinstance(last_child, NavigableString) and last_child != last_child.rstrip():
+                    trailing = str(last_child)[len(str(last_child).rstrip()):]
+                    last_child.replace_with(NavigableString(str(last_child).rstrip()))
+                    tag.insert_after(NavigableString(trailing))
         
         return str(soup)
+
+    @staticmethod
+    def _first_navigable_string(tag):
+        """Находит первый текстовый узел (NavigableString) внутри тега."""
+        from bs4 import NavigableString
+        for desc in tag.descendants:
+            if isinstance(desc, NavigableString) and desc.strip():
+                return desc
+        # Если нет непустых, берём первый любой
+        for desc in tag.descendants:
+            if isinstance(desc, NavigableString):
+                return desc
+        return None
+
+    @staticmethod
+    def _last_navigable_string(tag):
+        """Находит последний текстовый узел (NavigableString) внутри тега."""
+        from bs4 import NavigableString
+        last = None
+        for desc in tag.descendants:
+            if isinstance(desc, NavigableString):
+                last = desc
+        # Нам нужен последний с текстом, а если все пустые — последний любой
+        last_with_text = None
+        for desc in tag.descendants:
+            if isinstance(desc, NavigableString) and desc.strip():
+                last_with_text = desc
+        return last_with_text if last_with_text is not None else last
 
     def _to_markdown(self, post: Post, asset_map: dict[str, str]) -> str:
         """Конвертирует HTML в Markdown."""
@@ -326,9 +400,15 @@ class SponsorDownloader(BaseDownloader):
         markdown = re.sub(r'[\u00a0\u202f]', ' ', markdown)
 
         # Склеиваем вложенные em/strong в жирный курсив
-        # html2text создаёт ** _текст_** или _**текст**_ для <b><em> (с пробелами)
+        # html2text создаёт ** _текст_** или _**текст**_ для <b><em>
+        # Примечание: первый regex сохраняет \s* (html2text для <strong><em> даёт ** _text_**)
+        # Второй regex без \s* — иначе он жадно ловит _вы_ ***обязаны*** _это_
         markdown = re.sub(r'\*\*\s*_(.+?)_\s*\*\*', r'***\1***', markdown)
-        markdown = re.sub(r'_\s*\*\*(.+?)\*\*\s*_', r'***\1***', markdown)
+        markdown = re.sub(r'_\*\*(.+?)\*\*_', r'***\1***', markdown)
+
+        # Нормализуем 4+ звёздочек до 3 (страховка от артефактов слияния)
+        # ****текст**** → ***текст***, *****текст***** → ***текст***
+        markdown = re.sub(r'\*{4,}(.+?)\*{4,}', r'***\1***', markdown)
         
         # Перемещаем форматирование внутрь ссылок
         # [** _текст_**](url) → [***текст***](url)
