@@ -1,0 +1,2 @@
+[console_scripts]
+article-backup = backup:main

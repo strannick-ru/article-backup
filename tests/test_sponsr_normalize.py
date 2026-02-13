@@ -225,7 +225,8 @@ class SponsorNormalizeTests(unittest.TestCase):
         """Проблема 1: italic + bold-italic внутри ссылки с trailing пробелами.
         
         HTML: «<em>39 лет ... пишу: </em><a href="..."><em>вы </em><b><em>обязаны</em></b><em> это посмотреть</em></a>»
-        Плохо: «_39 лет ... пишу: _[ _вы ****обязаны****это посмотреть_](...)»
+        Плохо: «_39 лет ... пишу: _[ _вы_ ***обязаны*** _это посмотреть_](...)»
+        Хорошо: «_39 лет ... пишу:_ [_вы **обязаны** это посмотреть_](...)»
         """
         post = Post(
             post_id='1',
@@ -243,12 +244,13 @@ class SponsorNormalizeTests(unittest.TestCase):
         self.assertNotIn('****', result)
         # Закрывающий _ не должен иметь пробел перед ним
         self.assertNotIn('пишу: _', result)
-        # Внутри ссылки italic/bold-italic должны быть валидны
-        # Пробел между "вы" и "обязаны" не должен теряться
-        self.assertIn('обязаны', result)
-        self.assertIn('это посмотреть', result)
-        # Не должно быть _[ _вы
-        self.assertNotIn('_[ _', result)
+        # Соседние <em> внутри ссылки объединены в один курсив
+        # Ожидаем: [_вы **обязаны** это посмотреть_](url)
+        self.assertIn('[_вы **обязаны** это посмотреть_]', result)
+        # Не должно быть фрагментированного курсива
+        self.assertNotIn('_вы_', result)
+        self.assertNotIn('***обязаны***', result)
+        self.assertNotIn('_это посмотреть_]', result)
 
     def test_nested_identical_tags_merged(self):
         """Тест слияния вложенных одинаковых тегов: <em><em>text</em></em> → <em>text</em>."""
@@ -303,6 +305,112 @@ class SponsorNormalizeTests(unittest.TestCase):
         # Не должно быть 4+ звёздочек
         self.assertNotIn('****', result)
         self.assertIn('слово', result)
+
+
+    def test_adjacent_em_merged_in_link(self):
+        """Соседние <em> внутри <a> объединяются в один.
+        
+        HTML: <a><em>раз</em> <em>два</em> <em>три</em></a>
+        Хорошо: [_раз два три_](url)
+        Плохо: [_раз_ _два_ _три_](url)
+        """
+        post = Post(
+            post_id='1',
+            title='Test',
+            content_html='<p><a href="https://example.com"><em>раз</em> <em>два</em> <em>три</em></a></p>',
+            post_date='2025-01-01',
+            source_url='https://test.com',
+            tags=[],
+            assets=[]
+        )
+        
+        result = self.downloader._to_markdown(post, {})
+        
+        self.assertIn('[_раз два три_](https://example.com)', result)
+        self.assertNotIn('_раз_', result)
+        self.assertNotIn('_два_', result)
+
+    def test_adjacent_em_merged_in_paragraph(self):
+        """Соседние <em> внутри <p> объединяются в один.
+        
+        HTML: <p>перед <em>курсив1</em> <em>курсив2</em> после</p>
+        Хорошо: перед _курсив1 курсив2_ после
+        Плохо: перед _курсив1_ _курсив2_ после
+        """
+        post = Post(
+            post_id='1',
+            title='Test',
+            content_html='<p>перед <em>курсив1</em> <em>курсив2</em> после</p>',
+            post_date='2025-01-01',
+            source_url='https://test.com',
+            tags=[],
+            assets=[]
+        )
+        
+        result = self.downloader._to_markdown(post, {})
+        
+        self.assertIn('_курсив1 курсив2_', result)
+        self.assertNotIn('_курсив1_', result)
+
+    def test_adjacent_em_with_bold_merged(self):
+        """Соседние <em> с <b><em> между ними объединяются.
+        
+        HTML: <em>раз</em> <b><em>два</em></b> <em>три</em>
+        Хорошо: _раз **два** три_
+        Плохо: _раз_ ***два*** _три_
+        """
+        post = Post(
+            post_id='1',
+            title='Test',
+            content_html='<p><em>раз</em> <b><em>два</em></b> <em>три</em></p>',
+            post_date='2025-01-01',
+            source_url='https://test.com',
+            tags=[],
+            assets=[]
+        )
+        
+        result = self.downloader._to_markdown(post, {})
+        
+        self.assertIn('_раз **два** три_', result)
+        self.assertNotIn('***два***', result)
+
+    def test_single_em_not_affected(self):
+        """Одиночный <em> не затрагивается слиянием."""
+        post = Post(
+            post_id='1',
+            title='Test',
+            content_html='<p>текст <em>курсив</em> обычный</p>',
+            post_date='2025-01-01',
+            source_url='https://test.com',
+            tags=[],
+            assets=[]
+        )
+        
+        result = self.downloader._to_markdown(post, {})
+        
+        self.assertIn('_курсив_', result)
+
+    def test_non_adjacent_em_not_merged(self):
+        """<em> теги, разделённые обычным текстом, не объединяются.
+        
+        HTML: <em>курсив1</em> обычный <em>курсив2</em>
+        Должно остаться: _курсив1_ обычный _курсив2_
+        """
+        post = Post(
+            post_id='1',
+            title='Test',
+            content_html='<p><em>курсив1</em> обычный <em>курсив2</em></p>',
+            post_date='2025-01-01',
+            source_url='https://test.com',
+            tags=[],
+            assets=[]
+        )
+        
+        result = self.downloader._to_markdown(post, {})
+        
+        self.assertIn('_курсив1_', result)
+        self.assertIn('_курсив2_', result)
+        self.assertIn('обычный', result)
 
 
 if __name__ == '__main__':

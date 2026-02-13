@@ -14,14 +14,14 @@ from .config import Config, Source, load_cookie
 from .database import Database
 from .downloader import BaseDownloader, Post
 
-# Паттерны для преобразования embed URL в watch URL
+# Паттерны для распознавания embed URL видеохостингов (whitelist).
+# Если iframe src матчит один из паттернов — это встроенное видео.
 VIDEO_EMBED_PATTERNS = [
-    (r'rutube\.ru/play/embed/([a-f0-9]+)', lambda m: f'https://rutube.ru/video/{m.group(1)}/'),
-    (r'youtube\.com/embed/([^/?]+)', lambda m: f'https://youtube.com/watch?v={m.group(1)}'),
-    (r'youtu\.be/([^/?]+)', lambda m: f'https://youtube.com/watch?v={m.group(1)}'),
-    (r'player\.vimeo\.com/video/(\d+)', lambda m: f'https://vimeo.com/{m.group(1)}'),
-    (r'ok\.ru/videoembed/(\d+)', lambda m: f'https://ok.ru/video/{m.group(1)}'),
-    (r'vk\.com/video_ext\.php\?.*?oid=(-?\d+).*?id=(\d+)', lambda m: f'https://vk.com/video{m.group(1)}_{m.group(2)}'),
+    r'rutube\.ru/play/embed/',
+    r'youtube\.com/embed/',
+    r'player\.vimeo\.com/video/',
+    r'ok\.ru/videoembed/',
+    r'vk\.com/video_ext\.php',
 ]
 
 
@@ -253,28 +253,41 @@ class SponsorDownloader(BaseDownloader):
 
         return assets
 
-    def _parse_video_url(self, embed_src: str) -> str | None:
-        """Преобразует embed URL в watch URL."""
-        for pattern, converter in VIDEO_EMBED_PATTERNS:
-            match = re.search(pattern, embed_src)
-            if match:
-                return converter(match)
-        # Fallback: вернуть оригинальный URL если не распознан
-        if embed_src and ('video' in embed_src or 'embed' in embed_src):
-            return embed_src
-        return None
+    def _is_video_embed(self, src: str) -> bool:
+        """Проверяет, является ли URL embed-ссылкой на известный видеохостинг."""
+        for pattern in VIDEO_EMBED_PATTERNS:
+            if re.search(pattern, src):
+                return True
+        return False
 
     def _replace_video_embeds(self, html_content: str) -> str:
-        """Заменяет iframe/embed видео на markdown-ссылки."""
+        """Заменяет iframe/embed видео на HTML-ссылки.
+        
+        Распознанные видеохостинги → <a href="embed_url">📹 Видео</a>
+        (html2text превратит в markdown-ссылку, Hugo render hook — в iframe).
+        Нераспознанные → текстовая ссылка как fallback.
+        """
         soup = BeautifulSoup(html_content, 'lxml')
 
         for iframe in soup.find_all(['iframe', 'embed']):
             src = iframe.get('src', '')
-            video_url = self._parse_video_url(src)
-            if video_url:
-                placeholder = soup.new_tag('p')
-                placeholder.string = f'📹 Видео: {video_url}'
-                iframe.replace_with(placeholder)
+            if not src:
+                continue
+
+            if self._is_video_embed(src):
+                # Распознанный видеохостинг → ссылка с embed URL
+                link = soup.new_tag('a', href=src)
+                link.string = '\U0001f4f9 Видео'
+                wrapper = soup.new_tag('p')
+                wrapper.append(link)
+                iframe.replace_with(wrapper)
+            elif 'video' in src or 'embed' in src:
+                # Нераспознанный, но похож на видео → текстовая ссылка
+                link = soup.new_tag('a', href=src)
+                link.string = '\U0001f4f9 Видео'
+                wrapper = soup.new_tag('p')
+                wrapper.append(link)
+                iframe.replace_with(wrapper)
 
         return str(soup)
 
@@ -299,7 +312,15 @@ class SponsorDownloader(BaseDownloader):
                     # Разворачиваем внутренний тег, оставляя внешний
                     child.unwrap()
         
-        # 2. Удаляем пустые теги форматирования и выносим пробелы наружу
+        # 2. Слияние соседних <em>/<i> тегов внутри одного родителя.
+        #    <em>вы</em> <b><em>обязаны</em></b> <em>это</em>
+        #    → <em>вы <b>обязаны</b> это</em>
+        #    Это предотвращает фрагментированный курсив после html2text.
+        em_tags = {'em', 'i'}
+        bold_tags = {'b', 'strong'}
+        self._merge_adjacent_em(soup, em_tags, bold_tags)
+        
+        # 3. Удаляем пустые теги форматирования и выносим пробелы наружу
         for tag in list(soup.find_all(['b', 'strong', 'em', 'i'])):
             if tag.parent is None:
                 continue
@@ -323,7 +344,7 @@ class SponsorDownloader(BaseDownloader):
                     last_text.replace_with(last_text.rstrip())
                     tag.insert_after(NavigableString(trailing))
         
-        # 3. Вынос trailing/leading пробелов из <a> тегов наружу
+        # 4. Вынос trailing/leading пробелов из <a> тегов наружу
         #    После выноса пробелов из formatting тегов, пробел может остаться
         #    внутри <a> (но вне <em>/<b>), что даёт [текст ](url) в markdown
         for tag in list(soup.find_all('a')):
@@ -339,6 +360,111 @@ class SponsorDownloader(BaseDownloader):
                     tag.insert_after(NavigableString(trailing))
         
         return str(soup)
+
+    @staticmethod
+    def _merge_adjacent_em(soup, em_tags: set, bold_tags: set):
+        """Объединяет соседние <em>/<i> теги внутри одного родителя.
+        
+        Обрабатывает случаи вида:
+          <em>вы</em> <b><em>обязаны</em></b> <em>это</em>
+        → <em>вы <b>обязаны</b> это</em>
+        
+        Между <em> могут быть:
+        - whitespace (NavigableString из пробелов)
+        - <b>/<strong>, целиком обёрнутые в <em> (<b><em>текст</em></b>)
+        """
+        from bs4 import NavigableString, Tag
+        
+        def is_em(node):
+            """Проверяет, является ли узел тегом em/i."""
+            return isinstance(node, Tag) and node.name in em_tags
+        
+        def is_bold_wrapped_em(node):
+            """Проверяет, является ли узел <b><em>текст</em></b>."""
+            if not isinstance(node, Tag) or node.name not in bold_tags:
+                return False
+            children = list(node.children)
+            return len(children) == 1 and is_em(children[0])
+        
+        def is_whitespace(node):
+            """Проверяет, является ли узел пробельным текстом."""
+            return isinstance(node, NavigableString) and node.strip() == ''
+        
+        # Обходим все элементы, которые могут содержать em-последовательности
+        # Нельзя итерировать напрямую, т.к. дерево мутирует — собираем список родителей
+        parents = set()
+        for em in soup.find_all(list(em_tags)):
+            if em.parent is not None:
+                parents.add(id(em.parent))
+        
+        # Для каждого родителя проверяем его children
+        for parent in list(soup.descendants):
+            if not isinstance(parent, Tag) or id(parent) not in parents:
+                continue
+            
+            # Собираем runs — последовательности соседних em-элементов
+            children = list(parent.children)
+            i = 0
+            while i < len(children):
+                # Ищем начало run: первый <em>
+                if not is_em(children[i]):
+                    i += 1
+                    continue
+                
+                # Собираем run: <em>, whitespace, <b><em>...</em></b>, <em>, ...
+                run_start = i
+                run_nodes = [children[i]]
+                j = i + 1
+                while j < len(children):
+                    node = children[j]
+                    if is_em(node) or is_bold_wrapped_em(node):
+                        run_nodes.append(node)
+                        j += 1
+                    elif is_whitespace(node):
+                        # Пробел между em-элементами — добавляем в run
+                        # но только если за ним следует ещё em/bold-em
+                        if j + 1 < len(children) and (is_em(children[j + 1]) or is_bold_wrapped_em(children[j + 1])):
+                            run_nodes.append(node)
+                            j += 1
+                        else:
+                            break
+                    else:
+                        break
+                
+                # Нужно минимум 2 em-элемента (не считая whitespace) для слияния
+                em_count = sum(1 for n in run_nodes if is_em(n) or is_bold_wrapped_em(n))
+                if em_count < 2:
+                    i = j
+                    continue
+                
+                # Объединяем run в один <em>
+                # Берём первый <em> как базу, переносим в него содержимое остальных
+                first_em = run_nodes[0]
+                
+                for node in run_nodes[1:]:
+                    if is_whitespace(node):
+                        # Пробел → переносим внутрь first_em
+                        ws = NavigableString(str(node))
+                        node.extract()
+                        first_em.append(ws)
+                    elif is_em(node):
+                        # <em>текст</em> → переносим содержимое в first_em
+                        for child in list(node.children):
+                            child.extract()
+                            first_em.append(child)
+                        node.extract()
+                    elif is_bold_wrapped_em(node):
+                        # <b><em>текст</em></b> → <b>текст</b>, переносим в first_em
+                        inner_em = list(node.children)[0]
+                        inner_em.unwrap()  # убираем <em>, оставляя содержимое в <b>
+                        node.extract()
+                        first_em.append(node)
+                
+                # Пересобираем children, т.к. дерево изменилось
+                children = list(parent.children)
+                # Не инкрементируем i — начинаем с того же места
+                # (first_em остался, но children пересобрались)
+                i = children.index(first_em) + 1 if first_em in children else j
 
     @staticmethod
     def _first_navigable_string(tag):
