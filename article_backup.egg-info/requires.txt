@@ -1,0 +1,6 @@
+requests
+beautifulsoup4
+lxml
+html2text
+python-slugify
+pyyaml

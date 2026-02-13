@@ -240,8 +240,8 @@ class BoostyDownloader(BaseDownloader):
             text = self._parse_text_block(block, paragraph_offset)
             if text and url:
                 return f"[{text}]({url})"
-            elif url:
-                return f"<{url}>"
+            # Пустые ссылки (без текста) пропускаем — это часто артефакты редактора
+            # Было: elif url: return f"<{url}>"
 
         elif block_type == "audio_file":
             url = block.get("url", "")
@@ -254,7 +254,7 @@ class BoostyDownloader(BaseDownloader):
 
         elif block_type == "ok_video":
             video_id = block.get("id", "")
-            return f"\n📹 Видео: https://ok.ru/video/{video_id}\n"
+            return f"\n[\U0001f4f9 Видео](https://ok.ru/videoembed/{video_id})\n"
 
         return ""
 

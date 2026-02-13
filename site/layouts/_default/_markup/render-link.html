@@ -1,0 +1,14 @@
+{{- $url := .Destination -}}
+{{- $isVideo := false -}}
+{{- if findRE `rutube\.ru/play/embed/` $url }}{{ $isVideo = true }}{{ end -}}
+{{- if findRE `youtube\.com/embed/` $url }}{{ $isVideo = true }}{{ end -}}
+{{- if findRE `player\.vimeo\.com/video/` $url }}{{ $isVideo = true }}{{ end -}}
+{{- if findRE `ok\.ru/videoembed/` $url }}{{ $isVideo = true }}{{ end -}}
+{{- if findRE `vk\.com/video_ext\.php` $url }}{{ $isVideo = true }}{{ end -}}
+{{- if $isVideo -}}
+<div class="video-container">
+  <iframe src="{{ $url | safeURL }}" frameborder="0" allowfullscreen allow="autoplay; encrypted-media"></iframe>
+</div>
+{{- else -}}
+<a href="{{ .Destination | safeURL }}"{{ with .Title }} title="{{ . }}"{{ end }}{{ if strings.HasPrefix .Destination "http" }} target="_blank" rel="noopener"{{ end }}>{{ .Text | safeHTML }}</a>
+{{- end -}}
