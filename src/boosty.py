@@ -8,7 +8,7 @@ import requests
 
 from .config import Config, Source, load_cookie, load_auth_header
 from .database import Database
-from .downloader import BaseDownloader, Post
+from .downloader import BaseDownloader, Post, retry_request
 
 
 class BoostyDownloader(BaseDownloader):
@@ -16,6 +16,10 @@ class BoostyDownloader(BaseDownloader):
 
     PLATFORM = "boosty"
     API_BASE = "https://api.boosty.to/v1"
+
+    def __init__(self, config: Config, source: Source, db: Database):
+        self._warned_unknown_block_types: set[str] = set()
+        super().__init__(config, source, db)
 
     def _setup_session(self):
         """Настройка сессии с cookies и authorization."""
@@ -51,8 +55,12 @@ class BoostyDownloader(BaseDownloader):
             if offset:
                 url += f"&offset={offset}"
 
-            response = self.session.get(url, timeout=self.TIMEOUT)
-            response.raise_for_status()
+            def do_request():
+                resp = self.session.get(url, timeout=self.TIMEOUT)
+                resp.raise_for_status()
+                return resp
+
+            response = retry_request(do_request, max_retries=3)
 
             data = response.json()
             posts_chunk = data.get("data", [])
@@ -96,8 +104,12 @@ class BoostyDownloader(BaseDownloader):
         url = f"{self.API_BASE}/blog/{self.source.author}/post/{post_id}"
 
         try:
-            response = self.session.get(url, timeout=self.TIMEOUT)
-            response.raise_for_status()
+            def do_request():
+                resp = self.session.get(url, timeout=self.TIMEOUT)
+                resp.raise_for_status()
+                return resp
+
+            response = retry_request(do_request, max_retries=3)
             data = response.json()
             return self._parse_post(data)
         except requests.RequestException as e:
@@ -255,6 +267,10 @@ class BoostyDownloader(BaseDownloader):
         elif block_type == "ok_video":
             video_id = block.get("id", "")
             return f"\n[\U0001f4f9 Видео](https://ok.ru/videoembed/{video_id})\n"
+
+        elif block_type and block_type not in self._warned_unknown_block_types:
+            print(f"  [boosty] Пропущен неподдерживаемый тип блока: {block_type}")
+            self._warned_unknown_block_types.add(block_type)
 
         return ""
 

@@ -83,7 +83,7 @@ class BaseDownloader(ABC):
 
     PLATFORM: str = ""
     MAX_WORKERS: int = 5
-    TIMEOUT: tuple = (5, 30)
+    TIMEOUT: tuple = (5, 60)
 
     def __init__(self, config: Config, source: Source, db: Database):
         self.config = config
@@ -209,7 +209,11 @@ class BaseDownloader(ABC):
 
     def _save_post(self, post: Post):
         """Сохраняет пост на диск."""
-        slug = self._make_slug(post)
+        existing_record = self.db.get_post(self.PLATFORM, self.source.author, post.post_id)
+        if existing_record and existing_record.slug:
+            slug = existing_record.slug
+        else:
+            slug = self._make_slug(post)
         post_dir = self._get_post_dir(slug)
         post_dir.mkdir(parents=True, exist_ok=True)
 
@@ -251,7 +255,10 @@ class BaseDownloader(ABC):
         """Создаёт slug для папки поста."""
         date_prefix = post.post_date[:10]
         title_slug = transliterate(post.title)[:60]
-        return f"{date_prefix}-{title_slug}"
+        post_suffix = slugify(post.post_id, lowercase=True, max_length=16)
+        if not post_suffix:
+            post_suffix = hashlib.md5(post.post_id.encode()).hexdigest()[:8]
+        return f"{date_prefix}-{title_slug}-{post_suffix}"
 
     def _get_post_dir(self, slug: str) -> Path:
         """Возвращает путь к папке поста."""
@@ -306,33 +313,37 @@ class BaseDownloader(ABC):
                     return resp
 
                 response = retry_request(do_request, max_retries=3)
+                try:
+                    content_type = response.headers.get('Content-Type', '')
 
-                content_type = response.headers.get('Content-Type', '')
+                    # Полная проверка после получения Content-Type
+                    if not should_download_asset(url, content_type, self.source.asset_types):
+                        return url, None
 
-                # Полная проверка после получения Content-Type
-                if not should_download_asset(url, content_type, self.source.asset_types):
-                    return url, None
+                    filename_base = self._make_asset_filename(url, content_type, asset.get('alt'))
 
-                filename_base = self._make_asset_filename(url, content_type, asset.get('alt'))
-
-                with used_lock:
-                    filename = filename_base
-                    filepath = assets_dir / filename
-                    if filename in used_filenames or filepath.exists():
-                        filename = self._deduplicate_filename(filename, url)
+                    with used_lock:
+                        filename = filename_base
                         filepath = assets_dir / filename
+                        if filename in used_filenames or filepath.exists():
+                            filename = self._deduplicate_filename(filename, url)
+                            filepath = assets_dir / filename
 
-                    # На всякий случай добиваемся уникальности в рамках сессии
-                    while filename in used_filenames or filepath.exists():
-                        filename = self._deduplicate_filename(filename, url + filename)
-                        filepath = assets_dir / filename
+                        # На всякий случай добиваемся уникальности в рамках сессии
+                        while filename in used_filenames or filepath.exists():
+                            filename = self._deduplicate_filename(filename, url + filename)
+                            filepath = assets_dir / filename
 
-                    used_filenames.add(filename)
+                        used_filenames.add(filename)
 
-                if not filepath.exists():
-                    with open(filepath, 'wb') as f:
-                        for chunk in response.iter_content(chunk_size=8192):
-                            f.write(chunk)
+                    if not filepath.exists():
+                        with open(filepath, 'wb') as f:
+                            for chunk in response.iter_content(chunk_size=8192):
+                                f.write(chunk)
+                finally:
+                    close = getattr(response, 'close', None)
+                    if callable(close):
+                        close()
 
                 return url, filename
             except requests.RequestException as e:

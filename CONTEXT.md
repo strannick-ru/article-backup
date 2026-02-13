@@ -34,7 +34,7 @@ src/
   - Поддерживает context manager (`with Database(...) as db:`)
   - Таблица `sync_state` для отслеживания статуса инкрементальной синхронизации
 
-- `retry_request()` — функция для retry с exponential backoff (3 попытки, задержка 1-30 сек)
+- `retry_request()` — функция для retry с exponential backoff (3 попытки, задержка 1-30 сек). Применяется для API-запросов и скачивания файлов.
 
 ## API платформ
 
@@ -105,7 +105,7 @@ site/
 
 ## Соглашения
 
-- Slug папки: `{YYYY-MM-DD}-{transliterated-title}`
+- Slug папки: `{YYYY-MM-DD}-{transliterated-title}-{short-hash}` (для обратной совместимости старые посты остаются без хеша)
 - Assets в подпапке `assets/` рядом с `index.md`
 - Белый список расширений: jpg, png, gif, webp, svg, mp4, webm, mov, mkv, avi, mp3, wav, flac, ogg, pdf
 

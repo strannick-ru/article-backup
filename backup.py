@@ -3,6 +3,7 @@
 """CLI точка входа для бэкапа статей."""
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -21,13 +22,16 @@ def generate_hugo_config(config: Config):
     if not hugo_toml.parent.exists():
         return
 
-    content = f'''baseURL = '{config.hugo.base_url}'
-languageCode = '{config.hugo.language_code}'
-title = '{config.hugo.title}'
+    def toml_str(value: str) -> str:
+        return json.dumps(value, ensure_ascii=False)
+
+    content = f'''baseURL = {toml_str(config.hugo.base_url)}
+languageCode = {toml_str(config.hugo.language_code)}
+title = {toml_str(config.hugo.title)}
 relativeURLs = true
 
 [params]
-  default_theme = '{config.hugo.default_theme}'
+  default_theme = {toml_str(config.hugo.default_theme)}
 
 [markup.goldmark.renderer]
   unsafe = true
@@ -89,12 +93,15 @@ def get_downloader(platform: str, config: Config, source: Source, db: Database):
 
 def sync_all(config: Config, db: Database):
     """Синхронизирует всех авторов из конфига."""
+    errors: list[tuple[Source, Exception]] = []
     for source in config.sources:
         try:
             downloader = get_downloader(source.platform, config, source, db)
             downloader.sync()
         except Exception as e:
             print(f"[{source.platform}] Ошибка при синхронизации {source.author}: {e}")
+            errors.append((source, e))
+    return errors
 
 
 def download_single_post(url: str, config: Config, db: Database):
@@ -157,21 +164,34 @@ def main():
     # Создаём директорию и базу
     config.output_dir.mkdir(parents=True, exist_ok=True)
 
+    sync_errors: list[tuple[Source, Exception]] = []
+
     with Database(config.output_dir / 'index.db') as db:
         # Выполняем команду
         if args.url:
             if not is_post_url(args.url):
                 print(f"Ошибка: неверный URL поста: {args.url}")
                 sys.exit(1)
-            download_single_post(args.url, config, db)
+            try:
+                download_single_post(args.url, config, db)
+            except Exception as e:
+                print(f"Ошибка при скачивании поста: {e}")
+                sys.exit(1)
         else:
             if not config.sources:
                 print("Нет источников в конфиге. Добавьте секцию 'sources'.")
                 sys.exit(1)
-            sync_all(config, db)
+            sync_errors = sync_all(config, db)
 
     ensure_site_content_link(config)
     generate_hugo_config(config)
+
+    if sync_errors:
+        print(f"\nЗавершено с ошибками: {len(sync_errors)}")
+        for source, error in sync_errors:
+            print(f"  - [{source.platform}] {source.author}: {error}")
+        sys.exit(1)
+
     print("\nГотово!")
 
 

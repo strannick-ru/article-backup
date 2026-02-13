@@ -47,6 +47,11 @@ def load_config(config_path: Path) -> Config:
     with open(config_path, 'r', encoding='utf-8') as f:
         data = yaml.safe_load(f)
 
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        raise ValueError("Корень config.yaml должен быть объектом (mapping)")
+
     # output_dir
     env_output_dir = os.environ.get('BACKUP_OUTPUT_DIR')
     if env_output_dir:
@@ -56,6 +61,10 @@ def load_config(config_path: Path) -> Config:
 
     # auth
     auth_data = data.get('auth', {})
+    if auth_data is None:
+        auth_data = {}
+    if not isinstance(auth_data, dict):
+        raise ValueError("Секция 'auth' должна быть объектом")
     auth = Auth(
         sponsr_cookie_file=_to_path(auth_data.get('sponsr_cookie_file')),
         boosty_cookie_file=_to_path(auth_data.get('boosty_cookie_file')),
@@ -64,7 +73,17 @@ def load_config(config_path: Path) -> Config:
 
     # sources
     sources = []
-    for src in data.get('sources', []):
+    sources_data = data.get('sources', [])
+    if sources_data is None:
+        sources_data = []
+    if not isinstance(sources_data, list):
+        raise ValueError("Секция 'sources' должна быть списком")
+
+    for src in sources_data:
+        if not isinstance(src, dict):
+            raise ValueError("Каждый элемент в 'sources' должен быть объектом")
+        if 'platform' not in src or 'author' not in src:
+            raise ValueError("Каждый источник в 'sources' должен содержать 'platform' и 'author'")
         sources.append(Source(
             platform=src['platform'],
             author=src['author'],
@@ -75,6 +94,10 @@ def load_config(config_path: Path) -> Config:
 
     # hugo
     hugo_data = data.get('hugo', {})
+    if hugo_data is None:
+        hugo_data = {}
+    if not isinstance(hugo_data, dict):
+        raise ValueError("Секция 'hugo' должна быть объектом")
     hugo = HugoConfig(
         base_url=hugo_data.get('base_url', HugoConfig.base_url),
         title=hugo_data.get('title', HugoConfig.title),

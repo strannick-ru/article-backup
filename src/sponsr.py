@@ -12,7 +12,7 @@ import html2text
 
 from .config import Config, Source, load_cookie
 from .database import Database
-from .downloader import BaseDownloader, Post
+from .downloader import BaseDownloader, Post, retry_request
 
 # Паттерны для распознавания embed URL видеохостингов (whitelist).
 # Если iframe src матчит один из паттернов — это встроенное видео.
@@ -49,8 +49,12 @@ class SponsorDownloader(BaseDownloader):
             return self._project_id
 
         url = f"https://sponsr.ru/{self.source.author}/"
-        response = self.session.get(url, timeout=self.TIMEOUT)
-        response.raise_for_status()
+        def do_request():
+            resp = self.session.get(url, timeout=self.TIMEOUT)
+            resp.raise_for_status()
+            return resp
+
+        response = retry_request(do_request, max_retries=3)
 
         soup = BeautifulSoup(response.text, 'lxml')
         data_tag = soup.find('script', id='__NEXT_DATA__')
@@ -86,8 +90,12 @@ class SponsorDownloader(BaseDownloader):
 
         while True:
             api_url = f"https://sponsr.ru/project/{project_id}/more-posts/?offset={offset}"
-            response = self.session.get(api_url, timeout=self.TIMEOUT)
-            response.raise_for_status()
+            def do_request():
+                resp = self.session.get(api_url, timeout=self.TIMEOUT)
+                resp.raise_for_status()
+                return resp
+
+            response = retry_request(do_request, max_retries=3)
 
             data = response.json().get("response", {})
             posts_chunk = data.get("rows", [])
@@ -135,8 +143,12 @@ class SponsorDownloader(BaseDownloader):
         # URL формат: https://sponsr.ru/{author}/{post_id}/...
         url = f"https://sponsr.ru/{self.source.author}/{post_id}/"
         try:
-            response = self.session.get(url, timeout=self.TIMEOUT)
-            response.raise_for_status()
+            def do_request():
+                resp = self.session.get(url, timeout=self.TIMEOUT)
+                resp.raise_for_status()
+                return resp
+
+            response = retry_request(do_request, max_retries=3)
 
             soup = BeautifulSoup(response.text, 'lxml')
             data_tag = soup.find('script', id='__NEXT_DATA__')
@@ -160,8 +172,12 @@ class SponsorDownloader(BaseDownloader):
         while True:
             api_url = f"https://sponsr.ru/project/{project_id}/more-posts/?offset={offset}"
             try:
-                response = self.session.get(api_url, timeout=self.TIMEOUT)
-                response.raise_for_status()
+                def do_request():
+                    resp = self.session.get(api_url, timeout=self.TIMEOUT)
+                    resp.raise_for_status()
+                    return resp
+
+                response = retry_request(do_request, max_retries=3)
 
                 data = response.json().get("response", {})
                 posts_chunk = data.get("rows", [])
@@ -582,6 +598,10 @@ class SponsorDownloader(BaseDownloader):
         markdown = _fix_spacing(markdown, re.compile(r'\*\*\*.+?\*\*\*'))
         markdown = _fix_spacing(markdown, re.compile(r'(?<!\*)\*\*(?!\*).+?(?<!\*)\*\*(?!\*)'))
         markdown = _fix_spacing(markdown, re.compile(r'\[[^\]]+\]\([^)]+\)'))
+
+        # Исправляем артефакты html2text внутри ссылок: [ _текст_ ] -> [_текст_]
+        markdown = re.sub(r'\[\s+_', r'[_', markdown)
+        markdown = re.sub(r'_\s+\]', r'_]', markdown)
 
         # Заголовок берётся из frontmatter (Hugo), не дублируем его в body.
         return markdown
