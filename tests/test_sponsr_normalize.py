@@ -412,6 +412,100 @@ class SponsorNormalizeTests(unittest.TestCase):
         self.assertIn('_курсив2_', result)
         self.assertIn('обычный', result)
 
+    def _convert_full(self, html):
+        """Helper to convert HTML to Markdown (full text)."""
+        post = Post(
+            post_id='1',
+            title='Test',
+            content_html=html,
+            post_date='2025-01-01',
+            source_url='https://test.com',
+            tags=[],
+            assets=[]
+        )
+        return self.downloader._to_markdown(post, {})
+
+    def test_case_1_spacing_cleanup(self):
+        """1. Пробелы внутри курсива (_ текст _) и вокруг."""
+        html = (
+            '<p>фильме.</em></p><p><em>Например, Гор предсказал, что к 2016 году на Килиманджаро не останется снега. '
+            'В 2020 году газета The Times сообщила, что снег на горе высотой 19 000 футов (около 5800 метров) остался, '
+            'несмотря на предсказания Гора. </em></p><p><em>Гор'
+        )
+        md = self._convert_full(html)
+        
+        # Expectation: no spaces inside markers, clean paragraphs
+        self.assertIn('фильме.', md)
+        self.assertIn('_Например, Гор', md)
+        self.assertIn('предсказания Гора._', md)
+        self.assertIn('_Гор', md)
+        
+        self.assertNotIn('_ Например', md)
+        self.assertNotIn('Гора. _', md)
+        self.assertNotIn(' _Гор', md)
+
+    def test_case_2_multiline_italic(self):
+        """2. Курсив через границы абзацев."""
+        html = (
+            '<p>В.М.).</em></p><p><em>Метеоролог Крис Марц сказал, что климатология полна неопределенности и нюансов, '
+            'которые «Неудобная правда» полностью отвергает. </em></p><p><em>Однако'
+        )
+        md = self._convert_full(html)
+        
+        self.assertIn('В.М.).', md)
+        self.assertIn('_Метеоролог Крис', md)
+        self.assertIn('отвергает._', md)
+        self.assertIn('_Однако', md)
+        
+        self.assertNotIn('_ Метеоролог', md)
+        self.assertNotIn('отвергает. _', md)
+
+    def test_case_3_literal_underscore_in_text(self):
+        """3. Символы _ в обычном тексте не должны становиться разметкой."""
+        html = (
+            '<p>сформулировал: «_39 лет я никогда не писал этих слов в отзыве на кино, а сейчас пишу: _'
+            '<a href="http://example.com" target="_blank"><em>вы <strong>обязаны</strong> это посмотреть</em></a>».</p><p>К тому же'
+        )
+        md = self._convert_full(html)
+        
+        # Literal underscores should be escaped
+        self.assertIn(r'\_39 лет', md)
+        self.assertIn(r'пишу: \_', md)
+        
+        # Link formatting should be clean
+        self.assertIn('[_вы **обязаны** это посмотреть_](http://example.com)', md)
+        
+        # No extra spaces
+        self.assertNotIn('[ _вы', md)
+
+    def test_case_4_underscore_suffix(self):
+        """4. Пробел перед закрывающим _."""
+        html = '<p>читатель данного проекта ощутил себя _не таким как все _(которого не проведёшь)?</p>'
+        md = self._convert_full(html)
+        
+        # Literal underscores should be escaped
+        self.assertIn(r'\_не таким как все \_', md)
+        
+        # Verify no unescaped underscores (except inside words if any, but here they are spaced)
+        # Using regex to ensure underscores are preceded by backslash
+        import re
+        self.assertFalse(re.search(r'(?<!\\)_', md), "Found unescaped underscore")
+
+    def test_case_5_link_italic_punctuation(self):
+        """5. Курсив вокруг ссылки и точки."""
+        html = (
+            '<p>бежать.</em></p><p><em>Из нескольких разговоров ... из </em>'
+            '<a href="https://example.com" target="_blank"><em>свежего текста</em></a><em>.</em></p><p><em>Поэтому'
+        )
+        md = self._convert_full(html)
+        
+        self.assertIn('бежать.', md)
+        self.assertIn('_Из нескольких', md)
+        # Link inside italic context
+        self.assertIn('](https://example.com)', md)
+        self.assertNotIn(' _.', md)
+        self.assertNotIn('_. _', md)
+
 
 if __name__ == '__main__':
     unittest.main()

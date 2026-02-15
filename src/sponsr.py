@@ -361,12 +361,9 @@ class SponsorDownloader(BaseDownloader):
                     tag.insert_after(NavigableString(trailing))
         
         # 4. Вынос trailing/leading пробелов из <a> тегов наружу
-        #    После выноса пробелов из formatting тегов, пробел может остаться
-        #    внутри <a> (но вне <em>/<b>), что даёт [текст ](url) в markdown
         for tag in list(soup.find_all('a')):
             if tag.parent is None:
                 continue
-            # Trailing: проверяем последний дочерний узел (может быть голый пробел)
             children = list(tag.children)
             if children:
                 last_child = children[-1]
@@ -375,7 +372,39 @@ class SponsorDownloader(BaseDownloader):
                     last_child.replace_with(NavigableString(str(last_child).rstrip()))
                     tag.insert_after(NavigableString(trailing))
         
+        # 5. Экранирование markdown-символов в текстовых узлах
+        #    Чтобы "сырые" _, *, [ ] в тексте не превращались в разметку
+        self._escape_text_nodes(soup)
+
         return str(soup)
+
+    @staticmethod
+    def _escape_text_nodes(soup):
+        """Экранирует спецсимволы Markdown в текстовых узлах."""
+        from bs4 import NavigableString
+        
+        replacements = {
+            '_': '@@@US@@@',
+            '*': '@@@AST@@@',
+            '[': '@@@LBR@@@',
+            ']': '@@@RBR@@@',
+        }
+        
+        for text_node in soup.find_all(string=True):
+            if text_node.parent and text_node.parent.name in ['script', 'style', 'title']:
+                continue
+            
+            text = str(text_node)
+            if not text:
+                continue
+                
+            new_text = text
+            for char, placeholder in replacements.items():
+                if char in new_text:
+                    new_text = new_text.replace(char, placeholder)
+            
+            if new_text != text:
+                text_node.replace_with(NavigableString(new_text))
 
     @staticmethod
     def _merge_adjacent_em(soup, em_tags: set, bold_tags: set):
@@ -535,6 +564,12 @@ class SponsorDownloader(BaseDownloader):
 
         markdown = h2t.handle(html)
 
+        # Восстанавливаем экранированные символы (из плейсхолдеров DOM)
+        markdown = markdown.replace('@@@US@@@', r'\_')
+        markdown = markdown.replace('@@@AST@@@', r'\*')
+        markdown = markdown.replace('@@@LBR@@@', r'\[')
+        markdown = markdown.replace('@@@RBR@@@', r'\]')
+
         # Удаляем bidi-маркеры, которые ломают пробелы рядом с текстом
         markdown = re.sub(r'[\u200e\u200f\u202a-\u202e\u2066-\u2069]', '', markdown)
 
@@ -566,38 +601,19 @@ class SponsorDownloader(BaseDownloader):
         # Закрывающие: » " '
         markdown = re.sub(r'\s+([\u00bb\u201d\u2019])', r'\1', markdown)
 
-        # Восстанавливаем пробелы вокруг форматирования и ссылок
-        def _fix_spacing(text: str, pattern: re.Pattern) -> str:
-            """Добавляет пробелы вокруг элементов, если их нет."""
-            parts = []
-            last = 0
-            for match in pattern.finditer(text):
-                start, end = match.span()
-                before = text[last:start]
-                
-                # Добавляем пробел слева, если нужно
-                if start > 0 and before and before[-1].isalnum():
-                    before = before + ' '
-                
-                parts.append(before)
-                
-                # Добавляем сам матч
-                matched_text = text[start:end]
-                
-                # Добавляем пробел справа, если нужно
-                if end < len(text) and text[end].isalnum():
-                    matched_text = matched_text + ' '
-                
-                parts.append(matched_text)
-                last = end
+        # Восстанавливаем пробелы вокруг **bold**
+        # html2text часто склеивает: слово**bold** -> слово **bold**
+        # Используем поиск пар **, чтобы не сломать closing tag (bold**word -> bold **word - WRONG)
+        # 1. Left side: word**bold** -> word **bold**
+        markdown = re.sub(r'(\w)\*\*(.+?)\*\*', r'\1 **\2**', markdown)
+        # 2. Right side: **bold**word -> **bold** word
+        markdown = re.sub(r'\*\*(.+?)\*\*(\w)', r'**\1** \2', markdown)
 
-            parts.append(text[last:])
-            return ''.join(parts)
-
-        # Восстанавливаем пробелы вокруг bold-italic, bold, ссылок
-        markdown = _fix_spacing(markdown, re.compile(r'\*\*\*.+?\*\*\*'))
-        markdown = _fix_spacing(markdown, re.compile(r'(?<!\*)\*\*(?!\*).+?(?<!\*)\*\*(?!\*)'))
-        markdown = _fix_spacing(markdown, re.compile(r'\[[^\]]+\]\([^)]+\)'))
+        # Убираем пробел между ссылкой и знаками препинания (даже если они курсивные)
+        # [link](url) . -> [link](url).
+        # [link](url) _._ -> [link](url)_._
+        markdown = re.sub(r'(\)\s+)([.,:;!?])', r')\2', markdown)
+        markdown = re.sub(r'(\)\s+)(_[.,:;!?]_)', r')\2', markdown)
 
         # Исправляем артефакты html2text внутри ссылок: [ _текст_ ] -> [_текст_]
         markdown = re.sub(r'\[\s+_', r'[_', markdown)
