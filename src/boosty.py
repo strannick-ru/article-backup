@@ -16,6 +16,17 @@ class BoostyDownloader(BaseDownloader):
 
     PLATFORM = "boosty"
     API_BASE = "https://api.boosty.to/v1"
+    OK_VIDEO_QUALITY_PRIORITY = (
+        "full_hd",
+        "ultra_hd",
+        "quad_hd",
+        "high",
+        "medium",
+        "low",
+        "tiny",
+        "lowest",
+    )
+    OK_VIDEO_STREAM_FALLBACK = ("hls", "dash", "dash_uni")
 
     def __init__(self, config: Config, source: Source, db: Database):
         self._warned_unknown_block_types: set[str] = set()
@@ -172,14 +183,19 @@ class BoostyDownloader(BaseDownloader):
                     })
 
             elif block_type == "ok_video":
-                # ok.ru видео требует отдельной обработки
-                # Пока сохраняем только превью, если есть
-                preview = block.get("previewUrl") or block.get("preview") or ""
-                if preview:
+                video_url = self._extract_ok_video_player_url(block)
+                if video_url:
                     assets.append({
-                        "url": preview,
-                        "alt": f"video-preview-{block.get('id', '')}",
+                        "url": video_url,
+                        "alt": block.get("title") or f"video-{block.get('id', '')}",
                     })
+                else:
+                    preview = block.get("previewUrl") or block.get("preview") or ""
+                    if preview:
+                        assets.append({
+                            "url": preview,
+                            "alt": f"video-preview-{block.get('id', '')}",
+                        })
 
         return assets
 
@@ -265,12 +281,64 @@ class BoostyDownloader(BaseDownloader):
                 return f"\n🎵 **{title}**: [слушать]({url})\n"
 
         elif block_type == "ok_video":
-            video_id = block.get("id", "")
-            return f"\n[\U0001f4f9 Видео](https://ok.ru/videoembed/{video_id})\n"
+            video_url = self._extract_ok_video_player_url(block)
+            if video_url:
+                local = asset_map.get(video_url)
+                if local:
+                    return f"\n[\U0001f4f9 Видео](assets/{local})\n"
+                return f"\n[\U0001f4f9 Видео]({video_url})\n"
+
+            fallback_url = self._extract_ok_video_fallback_url(block)
+            if fallback_url:
+                return f"\n[\U0001f4f9 Видео]({fallback_url})\n"
 
         elif block_type and block_type not in self._warned_unknown_block_types:
             print(f"  [boosty] Пропущен неподдерживаемый тип блока: {block_type}")
             self._warned_unknown_block_types.add(block_type)
+
+        return ""
+
+    def _extract_ok_video_player_url(self, block: dict) -> str:
+        """Выбирает лучший прямой URL видео из ok_video блока."""
+        player_urls = block.get("playerUrls")
+        if not isinstance(player_urls, list):
+            return ""
+
+        by_type: dict[str, str] = {}
+        ordered_urls: list[str] = []
+
+        for item in player_urls:
+            if not isinstance(item, dict):
+                continue
+            url = item.get("url", "")
+            if not url:
+                continue
+
+            quality_type = str(item.get("type", "")).strip().lower()
+            if quality_type and quality_type not in by_type:
+                by_type[quality_type] = url
+            if url not in ordered_urls:
+                ordered_urls.append(url)
+
+        for quality_type in self.OK_VIDEO_QUALITY_PRIORITY:
+            if quality_type in by_type:
+                return by_type[quality_type]
+
+        for quality_type in self.OK_VIDEO_STREAM_FALLBACK:
+            if quality_type in by_type:
+                return by_type[quality_type]
+
+        return ordered_urls[0] if ordered_urls else ""
+
+    def _extract_ok_video_fallback_url(self, block: dict) -> str:
+        """Возвращает fallback-ссылку на страницу/встраивание OK-видео."""
+        video_vid = str(block.get("vid", "")).strip()
+        if video_vid:
+            return f"https://ok.ru/video/{video_vid}"
+
+        video_id = str(block.get("id", "")).strip()
+        if video_id:
+            return f"https://ok.ru/videoembed/{video_id}"
 
         return ""
 

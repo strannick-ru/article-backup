@@ -6,6 +6,18 @@
 
 ## [Unreleased]
 
+## [0.3.10] - 2026-02-17
+
+### Changed
+
+- **Boosty: `ok_video` в Markdown** — для блоков `ok_video` ссылка теперь строится из реальных `playerUrls` с приоритетом качества (`full_hd → ... → lowest`, затем `hls/dash`), а не из `videoembed/{id}`.
+
+### Fixed
+
+- **Boosty: недоступные ссылки OK.ru** — исправлен кейс, когда `id` в `ok_video` был UUID и ссылка `https://ok.ru/videoembed/{id}` вела на 404.
+- **Boosty: скачивание встроенного видео** — `ok_video` теперь добавляется в список ассетов как видеофайл (лучший `playerUrl`), поэтому при успешной загрузке Markdown ссылается на локальный файл `assets/<video>.mp4`.
+- **Boosty: fallback для `ok_video`** — при отсутствии `playerUrls` используется `https://ok.ru/video/{vid}`, и только потом legacy `https://ok.ru/videoembed/{id}`.
+
 ## [0.3.9] - 2026-02-16
 
 ### Fixed
