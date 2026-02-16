@@ -506,6 +506,18 @@ class SponsorNormalizeTests(unittest.TestCase):
         self.assertNotIn(' _.', md)
         self.assertNotIn('_. _', md)
 
+    def test_dash_speech_not_converted_to_list(self):
+        """Standalone тире перед <em> не превращается в markdown-список."""
+        html = (
+            '<p>интересуется:</p>'
+            '<p>- <em>Как сохранить в себе желание и способность задавать вопросы и интерес к ответам?</em></p>'
+            '<p>Люди</p>'
+        )
+        md = self._convert_full(html)
+
+        self.assertIn(r'\- _Как сохранить в себе желание и способность задавать вопросы и интерес к ответам?_', md)
+        self.assertNotIn('\n\n- _Как сохранить в себе желание и способность задавать вопросы и интерес к ответам?_', md)
+
 
 if __name__ == '__main__':
     unittest.main()

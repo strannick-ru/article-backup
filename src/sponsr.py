@@ -414,6 +414,11 @@ class SponsorDownloader(BaseDownloader):
                 if text:
                     # Если текст заканчивается пробелом -> заменяем его на маркер
                     if text.endswith(' '):
+                        # Исключение: standalone тире в начале абзаца (прямая речь).
+                        # Для "- <em>текст</em>" html2text сам ставит экранирование ("\\- ...").
+                        # Если заменить пробел на маркер, экранирование теряется и Hugo видит список.
+                        if text.strip() in {'-', '–', '—'}:
+                            continue
                         new_text = text.rstrip(' ')
                         if new_text:
                             prev_node.replace_with(NavigableString(new_text))
