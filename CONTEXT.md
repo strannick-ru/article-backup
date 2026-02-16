@@ -121,6 +121,7 @@ site/
 - Slug папки: `{YYYY-MM-DD}-{transliterated-title}-{short-hash}` (для обратной совместимости старые посты остаются без хеша)
 - Assets в подпапке `assets/` рядом с `index.md`
 - Белый список расширений: jpg, png, gif, webp, svg, mp4, webm, mov, mkv, avi, mp3, wav, flac, ogg, pdf
+- Сообщения git-коммитов, аннотации git-тегов и тексты release notes ведём на русском языке
 
 ## Типичные задачи
 
@@ -198,7 +199,7 @@ site/
    ```bash
    git add .
    git commit -m "Подготовка к релизу vX.Y.Z"
-   git tag -a vX.Y.Z -m "Release vX.Y.Z"
+   git tag -a vX.Y.Z -m "Релиз vX.Y.Z"
    git push origin main
    git push origin vX.Y.Z
    ```
