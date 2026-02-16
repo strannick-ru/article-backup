@@ -164,6 +164,10 @@ python -m unittest -q
 
 Для серверов с устаревшим Python можно использовать Docker.
 
+### Для пользователей (готовый образ)
+
+По умолчанию `docker-compose.yml` использует готовый образ из GitHub Container Registry (GHCR), что значительно ускоряет установку.
+
 Для удобства используйте скрипт `run-docker.sh`, который автоматически подхватывает `output_dir` из вашего `config.yaml` и монтирует правильный volume.
 
 ```bash
@@ -175,21 +179,18 @@ python -m unittest -q
 
 # Только пересборка сайта
 ./run-docker.sh hugo
-
-# Пересборка контейнеров
-./run-docker.sh build
 ```
 
-### Ручной запуск (Advanced)
+### Для разработчиков (сборка из исходников)
 
-Если вы не хотите использовать скрипт, можно запускать через `docker compose`, но нужно вручную указывать путь к бэкапам, если он отличается от `./backup`.
+Если вы хотите внести изменения в код и протестировать их в Docker, используйте конфиг `docker-compose-dev.yml`:
 
 ```bash
-# Если output_dir в конфиге = ./backup
-docker compose run --rm backup
+# Сборка образа
+docker compose -f docker-compose-dev.yml build
 
-# Если output_dir другой
-HOST_BACKUP_DIR=/path/to/data docker compose run --rm backup
+# Запуск
+docker compose -f docker-compose-dev.yml run --rm backup
 ```
 
 ### Cron
@@ -198,7 +199,7 @@ HOST_BACKUP_DIR=/path/to/data docker compose run --rm backup
 
 ```bash
 # Каждый день в 3:00
-0 3 * * * cd /path/to/article-backup && docker compose run --rm backup && docker compose run --rm hugo >> /var/log/article-backup.log 2>&1
+0 3 * * * cd /path/to/article-backup && ./run-docker.sh >> /var/log/article-backup.log 2>&1
 ```
 
 ## Структура выходных файлов

@@ -1,6 +1,6 @@
 services:
   backup:
-    image: ghcr.io/strannick-ru/article-backup:latest
+    build: .
     environment:
       - BACKUP_OUTPUT_DIR=/app/backup
     volumes:
