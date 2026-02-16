@@ -376,7 +376,71 @@ class SponsorDownloader(BaseDownloader):
         #    Чтобы "сырые" _, *, [ ] в тексте не превращались в разметку
         self._escape_text_nodes(soup)
 
+        # 6. Умная расстановка пробелов вокруг inline-тегов в DOM.
+        #    Вместо regex-постпроцессинга, мы раздвигаем "слипшиеся" узлы
+        #    на уровне HTML (текст<b>bold</b> -> текст <b>bold</b>).
+        self._ensure_spacing(soup)
+
         return str(soup)
+
+    @staticmethod
+    def _ensure_spacing(soup):
+        """Обеспечивает наличие пробелов вокруг inline-тегов в DOM.
+        
+        Если текстовый узел "прилип" к тегу форматирования, вставляет маркер.
+        Пример: "word<b>bold</b>" -> "word@@@SP@@@<b>bold</b>"
+        html2text сохранит это как "word@@@SP@@@**bold**".
+        Позже маркер заменяется на пробел.
+        Использование NBSP или обычного пробела ненадежно, т.к. html2text может их схлопнуть.
+        """
+        from bs4 import NavigableString, Tag
+        
+        # Маркер для принудительного пробела
+        SPACER = '@@@SP@@@'
+        
+        # Теги, вокруг которых нужны пробелы (если они граничат с текстом)
+        inline_tags = {'b', 'strong', 'em', 'i', 'a', 'code', 'span'}
+        
+        # Обходим все такие теги
+        for tag in soup.find_all(list(inline_tags)):
+            if tag.parent is None:
+                continue
+                
+            # --- Проверка слева (prev_sibling) ---
+            prev_node = tag.previous_sibling
+            if isinstance(prev_node, NavigableString):
+                text = str(prev_node)
+                if text:
+                    # Если текст заканчивается пробелом -> заменяем его на маркер
+                    if text.endswith(' '):
+                        new_text = text.rstrip(' ')
+                        if new_text:
+                            prev_node.replace_with(NavigableString(new_text))
+                        else:
+                            prev_node.extract()
+                        tag.insert_before(NavigableString(SPACER))
+                    
+                    # Если нет пробела, но нужен (буква/пунктуация)
+                    elif text[-1].isalnum() or text[-1] in '.,:;!?")':
+                        tag.insert_before(NavigableString(SPACER))
+            
+            # --- Проверка справа (next_sibling) ---
+            next_node = tag.next_sibling
+            if isinstance(next_node, NavigableString):
+                text = str(next_node)
+                if text:
+                    # Если текст начинается с пробела -> заменяем
+                    if text.startswith(' '):
+                        new_text = text.lstrip(' ')
+                        if new_text:
+                            next_node.replace_with(NavigableString(new_text))
+                        else:
+                            next_node.extract()
+                        tag.insert_after(NavigableString(SPACER))
+                    
+                    # Если нет пробела, но нужен
+                    elif text[0].isalnum() or text[0] in '("':
+                        tag.insert_after(NavigableString(SPACER))
 
     @staticmethod
     def _escape_text_nodes(soup):
@@ -569,6 +633,8 @@ class SponsorDownloader(BaseDownloader):
         markdown = markdown.replace('@@@AST@@@', r'\*')
         markdown = markdown.replace('@@@LBR@@@', r'\[')
         markdown = markdown.replace('@@@RBR@@@', r'\]')
+        # Заменяем маркеры пробелов, вставленные в DOM
+        markdown = markdown.replace('@@@SP@@@', ' ')
 
         # Удаляем bidi-маркеры, которые ломают пробелы рядом с текстом
         markdown = re.sub(r'[\u200e\u200f\u202a-\u202e\u2066-\u2069]', '', markdown)
@@ -601,19 +667,23 @@ class SponsorDownloader(BaseDownloader):
         # Закрывающие: » " '
         markdown = re.sub(r'\s+([\u00bb\u201d\u2019])', r'\1', markdown)
 
-        # Восстанавливаем пробелы вокруг **bold**
-        # html2text часто склеивает: слово**bold** -> слово **bold**
-        # Используем поиск пар **, чтобы не сломать closing tag (bold**word -> bold **word - WRONG)
-        # 1. Left side: word**bold** -> word **bold**
-        markdown = re.sub(r'(\w)\*\*(.+?)\*\*', r'\1 **\2**', markdown)
-        # 2. Right side: **bold**word -> **bold** word
-        markdown = re.sub(r'\*\*(.+?)\*\*(\w)', r'**\1** \2', markdown)
-
-        # Убираем пробел между ссылкой и знаками препинания (даже если они курсивные)
+        # Убираем пробел перед знаками препинания (.,:;!?)
+        # Работает для: обычного текста, ссылок, курсива, жирного
         # [link](url) . -> [link](url).
-        # [link](url) _._ -> [link](url)_._
-        markdown = re.sub(r'(\)\s+)([.,:;!?])', r')\2', markdown)
-        markdown = re.sub(r'(\)\s+)(_[.,:;!?]_)', r')\2', markdown)
+        # word _._ -> word_._
+        # word **.** -> word**.**
+        # Используем [ \t]+ вместо \s+, чтобы не удалять переносы строк
+        punct = r'[.,:;!?]'
+        # 1. Обычная пунктуация
+        markdown = re.sub(r'[ \t]+(' + punct + ')', r'\1', markdown)
+        # 2. Курсивная пунктуация (_._)
+        markdown = re.sub(r'[ \t]+(_' + punct + '_)', r'\1', markdown)
+        # 3. Жирная пунктуация (**.**)
+        # Используем [*][*] вместо \*\*, чтобы избежать SyntaxWarning
+        markdown = re.sub(r'[ \t]+([*][*]' + punct + '[*][*])', r'\1', markdown)
+        # 4. Курсив, начинающийся со знака препинания (_, text_)
+        # Убираем пробел перед ним: word _, -> word_,
+        markdown = re.sub(r'[ \t]+(_' + punct + ')', r'\1', markdown)
 
         # Исправляем артефакты html2text внутри ссылок: [ _текст_ ] -> [_текст_]
         markdown = re.sub(r'\[\s+_', r'[_', markdown)
