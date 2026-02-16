@@ -84,6 +84,7 @@ class BaseDownloader(ABC):
     PLATFORM: str = ""
     MAX_WORKERS: int = 5
     TIMEOUT: tuple = (5, 60)
+    FETCH_FULL_POST_IN_SYNC: bool = False
 
     def __init__(self, config: Config, source: Source, db: Database):
         self.config = config
@@ -146,7 +147,19 @@ class BaseDownloader(ABC):
         print(f"  Найдено постов: {len(posts)}, новых: {len(new_posts)}")
 
         for raw_post in new_posts:
-            post = self._parse_post(raw_post)
+            post_id = str(raw_post.get('id', raw_post.get('post_id')))
+
+            # Для некоторых платформ/эндпоинтов список постов может содержать
+            # урезанный или искажённый контент. В этом случае догружаем полный
+            # пост по ID (как в single mode), чтобы сохранить консистентный
+            # результат конвертации Markdown.
+            post = None
+            if self.FETCH_FULL_POST_IN_SYNC and post_id:
+                post = self.fetch_post(post_id)
+
+            if not post:
+                post = self._parse_post(raw_post)
+
             if post:
                 self._save_post(post)
 

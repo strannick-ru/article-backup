@@ -29,6 +29,7 @@ class SponsorDownloader(BaseDownloader):
     """Загрузчик статей с Sponsr.ru"""
 
     PLATFORM = "sponsr"
+    FETCH_FULL_POST_IN_SYNC = True
 
     def __init__(self, config: Config, source: Source, db: Database):
         self._project_id: str | None = None

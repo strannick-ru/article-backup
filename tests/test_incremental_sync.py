@@ -6,10 +6,54 @@ from unittest.mock import MagicMock, patch
 from src.config import Auth, Config, Source
 from src.database import Database
 from src.boosty import BoostyDownloader
+from src.downloader import Post
 from src.sponsr import SponsorDownloader
 
 
 class IncrementalSyncTests(unittest.TestCase):
+    def test_sponsr_sync_fetches_full_post_for_new_items(self):
+        """Sponsr sync догружает полный пост, а не берёт урезанный HTML из списка."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            config = Config(output_dir=tmp_path, auth=Auth())
+            source = Source(platform='sponsr', author='test_author')
+
+            with Database(tmp_path / 'test.db') as db:
+                with patch('src.sponsr.load_cookie', return_value='fake_cookie'):
+                    dl = SponsorDownloader(config, source, db)
+
+                raw_posts = [{
+                    'post_id': '137432',
+                    'post_title': 'Test title',
+                    'post_date': '2025-01-01T00:00:00',
+                    'post_url': '/test_author/137432/test-title',
+                    'post_text': {'text': '<p>bad<strong>html</strong></p>'},
+                }]
+
+                full_post = Post(
+                    post_id='137432',
+                    title='Test title',
+                    content_html='<p>good <strong>html</strong></p>',
+                    post_date='2025-01-01T00:00:00',
+                    source_url='https://sponsr.ru/test_author/137432/test-title',
+                    tags=[],
+                    assets=[],
+                )
+
+                with patch.object(dl, 'fetch_posts_list', return_value=raw_posts):
+                    with patch.object(dl, 'fetch_post', return_value=full_post) as mocked_fetch_post:
+                        dl.sync()
+
+                mocked_fetch_post.assert_called_once_with('137432')
+
+                saved = db.get_post('sponsr', 'test_author', '137432')
+                if saved is None:
+                    self.fail('Пост не был сохранён в БД')
+                md_path = Path(saved.local_path) / 'index.md'
+                content = md_path.read_text(encoding='utf-8')
+                self.assertIn('good **html**', content)
+                self.assertNotIn('bad **html**', content)
+
     def test_sponsr_incremental_stops_on_clean_chunk(self):
         """Sponsr: останавливается на чистом чанке."""
         with tempfile.TemporaryDirectory() as tmp:
@@ -48,12 +92,11 @@ class IncrementalSyncTests(unittest.TestCase):
                     call_count += 1
                     return resp
                 
-                dl.session.get = mock_get
-                
                 # Все посты уже существуют
                 existing_ids = {str(i) for i in range(1, 41)}
-                
-                posts = dl.fetch_posts_list(existing_ids, incremental=True, safety_chunks=1)
+
+                with patch.object(dl.session, 'get', side_effect=mock_get):
+                    posts = dl.fetch_posts_list(existing_ids, incremental=True, safety_chunks=1)
                 
                 # Должен остановиться после первого чанка + 1 защитный
                 self.assertEqual(call_count, 2)
@@ -102,12 +145,11 @@ class IncrementalSyncTests(unittest.TestCase):
                     call_count += 1
                     return resp
                 
-                dl.session.get = mock_get
-                
                 # Первые 5 постов новые, остальные существуют
                 existing_ids = {str(i) for i in range(6, 41)}
-                
-                posts = dl.fetch_posts_list(existing_ids, incremental=True, safety_chunks=1)
+
+                with patch.object(dl.session, 'get', side_effect=mock_get):
+                    posts = dl.fetch_posts_list(existing_ids, incremental=True, safety_chunks=1)
                 
                 # Должен загрузить: первый (с новыми) + второй (чистый) + остановиться
                 # Всего 2 чанка с данными (call_count может быть 2 или 3 в зависимости от реализации)
@@ -146,11 +188,10 @@ class IncrementalSyncTests(unittest.TestCase):
                     call_count += 1
                     return resp
                 
-                dl.session.get = mock_get
-                
                 existing_ids = {f"uuid-{i}" for i in range(1, 41)}
-                
-                posts = dl.fetch_posts_list(existing_ids, incremental=True, safety_chunks=1)
+
+                with patch.object(dl.session, 'get', side_effect=mock_get):
+                    posts = dl.fetch_posts_list(existing_ids, incremental=True, safety_chunks=1)
                 
                 self.assertEqual(call_count, 2)
                 self.assertEqual(len(posts), 40)
