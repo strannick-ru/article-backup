@@ -75,14 +75,26 @@ src/
 
 ```
 Dockerfile              → Python 3.12-slim, копирует backup.py и src/
-docker-compose.yml      → сервисы backup (Python) и hugo (latest + копирование CSS)
+docker-compose.yml      → готовый образ из GHCR (для пользователей)
+docker-compose-dev.yml  → сборка из исходников (build: .) для разработки
 run-docker.sh           → скрипт-обертка для корректного запуска с учетом config.yaml
 .dockerignore           → исключает __pycache__, .git, backup/, site/public/
 ```
 
-Запуск: `./run-docker.sh` (рекомендуется) или `docker compose run ...`
+Запуск: `./run-docker.sh` (рекомендуется). Скрипт использует `docker-compose.yml` (готовый образ).
+
+Разработка:
+```bash
+docker compose -f docker-compose-dev.yml build
+docker compose -f docker-compose-dev.yml run --rm backup
+```
 
 Сервис `hugo` после сборки автоматически копирует CSS в папки авторов для поддержки субдоменов.
+
+**Публикация образов:**
+Настроен GitHub Actions workflow (`.github/workflows/docker-publish.yml`). При создании тега `v*` (релиз):
+1. Собирается мультиплатформенный образ (amd64/arm64).
+2. Публикуется в GHCR: `ghcr.io/strannick-ru/article-backup:latest` и `:vX.Y.Z`.
 
 ## Hugo-сайт
 
@@ -196,8 +208,10 @@ site/
    - Приложить quickstart архив:
      ```bash
      tar -czf article-backup-vX.Y.Z-quickstart.tar.gz \
-       README.md LICENSE config.yaml.example docker-compose.yml \
-       Dockerfile .dockerignore requirements.txt pyproject.toml \
+       README.md LICENSE config.yaml.example \
+       docker-compose.yml docker-compose-dev.yml \
+       Dockerfile .dockerignore run-docker.sh \
+       requirements.txt pyproject.toml \
        --transform 's,^,article-backup/,'
      gh release upload vX.Y.Z article-backup-vX.Y.Z-quickstart.tar.gz
      ```
