@@ -314,10 +314,11 @@ class BaseDownloader(ABC):
 
         def download_one(asset: dict) -> tuple[str, str | None]:
             url = asset["url"]
+            force = asset.get("force", False)
             try:
                 # Предварительная проверка (если расширение есть)
                 ext = Path(urlparse(url).path).suffix.lower()
-                if ext and not should_download_asset(url, None, self.source.asset_types):
+                if ext and not force and not should_download_asset(url, None, self.source.asset_types):
                     return url, None
 
                 def do_request():
@@ -330,7 +331,7 @@ class BaseDownloader(ABC):
                     content_type = response.headers.get('Content-Type', '')
 
                     # Полная проверка после получения Content-Type
-                    if not should_download_asset(url, content_type, self.source.asset_types):
+                    if not force and not should_download_asset(url, content_type, self.source.asset_types):
                         return url, None
 
                     filename_base = self._make_asset_filename(url, content_type, asset.get('alt'))

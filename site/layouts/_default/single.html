@@ -3,7 +3,7 @@
     <h1 class="post-title">{{ .Title }}</h1>
     <div class="meta">
       <time>{{ .Date.Format "02.01.2006" }}</time>
-      {{ with .Params.author }} • {{ . }}{{ end }}
+      {{ with .Params.author }} • <a href="../">{{ . }}</a>{{ end }}
       {{ with .Params.tags }}
         <span class="tags">
           {{ range . }}<a href="{{ printf "tags/%s/" (. | urlize) | relURL }}">#{{ . }}</a>{{ end }}
