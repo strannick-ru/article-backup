@@ -139,8 +139,8 @@ class BoostyVideoEmbedTests(unittest.TestCase):
              patch('src.boosty.load_auth_header', return_value='Bearer fake_token'):
             self.downloader = BoostyDownloader(self.config, self.source, self.db)
 
-    def test_ok_video_uses_player_url(self):
-        """ok_video блок → markdown-ссылка на лучший playerUrl."""
+    def test_ok_video_uses_player_url_no_preview(self):
+        """ok_video без превью → простая текстовая ссылка на playerUrl."""
         blocks = [
             {
                 "type": "ok_video",
@@ -164,13 +164,15 @@ class BoostyVideoEmbedTests(unittest.TestCase):
         # Не должно быть старого формата
         self.assertNotIn('📹 Видео:', result)
 
-    def test_ok_video_uses_local_file_if_downloaded(self):
-        """ok_video с playerUrl должен ссылаться на локальный asset, если скачан."""
+    def test_ok_video_clickable_preview_with_local_video(self):
+        """ok_video: превью скачано + видео скачано → кликабельная картинка на локальный файл."""
+        preview_url = "https://iv.okcdn.ru/videoPreview?id=1"
         video_url = "https://vd.example/high?id=1"
         blocks = [
             {
                 "type": "ok_video",
                 "id": "abc",
+                "preview": preview_url,
                 "playerUrls": [{"type": "high", "url": video_url}],
             }
         ]
@@ -181,14 +183,43 @@ class BoostyVideoEmbedTests(unittest.TestCase):
             tags=[], assets=[]
         )
 
-        result = self.downloader._to_markdown(post, {video_url: "video-1.mp4"})
+        asset_map = {preview_url: "video-preview-abc.jpg", video_url: "video-1.mp4"}
+        result = self.downloader._to_markdown(post, asset_map)
 
-        self.assertIn('[📹 Видео](assets/video-1.mp4)', result)
+        self.assertIn('[![📹 Видео](assets/video-preview-abc.jpg)](assets/video-1.mp4)', result)
 
-    def test_ok_video_falls_back_to_vid_url(self):
-        """При отсутствии playerUrls используем ok.ru/video/{vid}."""
+    def test_ok_video_clickable_preview_with_fallback_url(self):
+        """ok_video: превью скачано, видео нет → кликабельная картинка на ok.ru/video."""
+        preview_url = "https://iv.okcdn.ru/videoPreview?id=1"
         blocks = [
-            {"type": "ok_video", "id": "uuid-1", "vid": "11386338749172"},
+            {
+                "type": "ok_video",
+                "id": "uuid-1",
+                "vid": "11386338749172",
+                "preview": preview_url,
+            }
+        ]
+        post = Post(
+            post_id='1', title='Test',
+            content_html=json.dumps(blocks),
+            post_date='2025-01-01', source_url='https://test.com',
+            tags=[], assets=[]
+        )
+
+        asset_map = {preview_url: "video-preview-uuid-1.jpg"}
+        result = self.downloader._to_markdown(post, asset_map)
+
+        self.assertIn('[![📹 Видео](assets/video-preview-uuid-1.jpg)](https://ok.ru/video/11386338749172)', result)
+
+    def test_ok_video_preview_not_downloaded_falls_back_to_text_link(self):
+        """ok_video: превью есть в блоке но не скачано → обычная текстовая ссылка."""
+        blocks = [
+            {
+                "type": "ok_video",
+                "id": "uuid-1",
+                "vid": "11386338749172",
+                "preview": "https://iv.okcdn.ru/videoPreview?id=1",
+            }
         ]
         post = Post(
             post_id='1', title='Test',
@@ -200,6 +231,7 @@ class BoostyVideoEmbedTests(unittest.TestCase):
         result = self.downloader._to_markdown(post, {})
 
         self.assertIn('[📹 Видео](https://ok.ru/video/11386338749172)', result)
+        self.assertNotIn('![', result)
 
     def test_ok_video_falls_back_to_embed_id(self):
         """Legacy fallback: если есть только id, оставляем videoembed/{id}."""
@@ -219,13 +251,16 @@ class BoostyVideoEmbedTests(unittest.TestCase):
 
     def test_ok_video_with_surrounding_text(self):
         """ok_video между текстовыми блоками."""
+        preview_url = "https://iv.okcdn.ru/preview?id=2"
+        video_url = "https://vd.example/medium?id=2"
         blocks = [
             {"type": "text", "content": json.dumps(["Посмотрите видео:"])},
             {"type": "text", "modificator": "BLOCK_END"},
             {
                 "type": "ok_video",
                 "id": "999888777",
-                "playerUrls": [{"type": "medium", "url": "https://vd.example/medium?id=2"}],
+                "preview": preview_url,
+                "playerUrls": [{"type": "medium", "url": video_url}],
             },
             {"type": "text", "content": json.dumps(["Вот такие дела."])},
             {"type": "text", "modificator": "BLOCK_END"},
@@ -237,14 +272,15 @@ class BoostyVideoEmbedTests(unittest.TestCase):
             tags=[], assets=[]
         )
 
-        result = self.downloader._to_markdown(post, {})
+        asset_map = {preview_url: "preview.jpg", video_url: "video.mp4"}
+        result = self.downloader._to_markdown(post, asset_map)
 
         self.assertIn('Посмотрите видео:', result)
-        self.assertIn('[📹 Видео](https://vd.example/medium?id=2)', result)
+        self.assertIn('[![📹 Видео](assets/preview.jpg)](assets/video.mp4)', result)
         self.assertIn('Вот такие дела.', result)
 
-    def test_extract_assets_prefers_ok_video_player_url(self):
-        """_extract_assets для ok_video должен добавлять видео URL, а не только preview."""
+    def test_extract_assets_ok_video_with_player_urls_extracts_both(self):
+        """_extract_assets для ok_video с playerUrls: и превью, и видео."""
         blocks = [
             {
                 "type": "ok_video",
@@ -260,11 +296,16 @@ class BoostyVideoEmbedTests(unittest.TestCase):
 
         assets = self.downloader._extract_assets(blocks)
 
-        self.assertEqual(len(assets), 1)
-        self.assertEqual(assets[0]["url"], "https://vd.example/high?id=1")
+        self.assertEqual(len(assets), 2)
+        # Первый — превью (с force=True)
+        self.assertEqual(assets[0]["url"], "https://iv.okcdn.ru/videoPreview?id=1")
+        self.assertIn("video-preview-", assets[0]["alt"])
+        self.assertTrue(assets[0].get("force"))
+        # Второй — видео
+        self.assertEqual(assets[1]["url"], "https://vd.example/high?id=1")
 
-    def test_extract_assets_ok_video_falls_back_to_preview(self):
-        """_extract_assets: если playerUrls пусты, берём preview."""
+    def test_extract_assets_ok_video_without_player_urls_extracts_preview(self):
+        """_extract_assets: если playerUrls пусты, берём только preview (с force)."""
         blocks = [
             {
                 "type": "ok_video",
@@ -278,6 +319,25 @@ class BoostyVideoEmbedTests(unittest.TestCase):
         self.assertEqual(len(assets), 1)
         self.assertEqual(assets[0]["url"], "https://iv.okcdn.ru/videoPreview?id=1")
         self.assertIn("video-preview-", assets[0]["alt"])
+        self.assertTrue(assets[0].get("force"))
+
+    def test_extract_assets_ok_video_no_preview_only_video(self):
+        """_extract_assets: если нет preview, только видео."""
+        blocks = [
+            {
+                "type": "ok_video",
+                "id": "video-id",
+                "playerUrls": [
+                    {"type": "high", "url": "https://vd.example/high?id=1"},
+                ],
+            }
+        ]
+
+        assets = self.downloader._extract_assets(blocks)
+
+        self.assertEqual(len(assets), 1)
+        self.assertEqual(assets[0]["url"], "https://vd.example/high?id=1")
+        self.assertFalse(assets[0].get("force", False))
 
     def test_ok_video_player_url_all_empty(self):
         """playerUrls с пустыми url → fallback на vid/id."""
@@ -365,6 +425,65 @@ class BoostyVideoEmbedTests(unittest.TestCase):
         result = self.downloader._to_markdown(post, {})
 
         self.assertNotIn('📹', result)
+
+
+class DownloadAssetsForceTests(unittest.TestCase):
+    """Тесты force-флага при скачивании assets."""
+
+    def setUp(self):
+        self.config = Config(output_dir=Path('/tmp/test'), auth=Auth())
+        # asset_types без image — обычные картинки фильтруются
+        self.source = Source(platform='boosty', author='test_author',
+                             asset_types=['video'])
+        self.db = MagicMock(spec=Database)
+
+        with patch('src.boosty.load_cookie', return_value='fake_cookie'), \
+             patch('src.boosty.load_auth_header', return_value='Bearer fake_token'):
+            self.downloader = BoostyDownloader(self.config, self.source, self.db)
+
+    @patch('src.downloader.retry_request')
+    def test_force_asset_bypasses_type_filter(self, mock_retry):
+        """Asset с force=True скачивается даже если тип не в asset_types."""
+        import tempfile
+        import os
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir)
+
+            # Мокаем ответ для картинки-превью
+            mock_response = MagicMock()
+            mock_response.headers = {'Content-Type': 'image/jpeg'}
+            mock_response.iter_content.return_value = [b'fake image data']
+            mock_response.close = MagicMock()
+            mock_retry.return_value = mock_response
+
+            assets = [
+                {"url": "https://iv.okcdn.ru/preview.jpg", "alt": "video-preview-1", "force": True},
+            ]
+
+            result = self.downloader._download_assets(assets, assets_dir)
+
+            # Должна быть скачана, несмотря на то что image не в asset_types
+            self.assertEqual(len(result), 1)
+            self.assertIn("https://iv.okcdn.ru/preview.jpg", result)
+
+    @patch('src.downloader.retry_request')
+    def test_non_force_asset_filtered_by_type(self, mock_retry):
+        """Обычный asset фильтруется по asset_types."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assets_dir = Path(tmpdir)
+
+            assets = [
+                {"url": "https://example.com/photo.jpg", "alt": "photo"},
+            ]
+
+            result = self.downloader._download_assets(assets, assets_dir)
+
+            # Не должна быть скачана — image не в asset_types
+            self.assertEqual(len(result), 0)
+            mock_retry.assert_not_called()
 
 
 if __name__ == '__main__':

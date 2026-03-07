@@ -183,19 +183,21 @@ class BoostyDownloader(BaseDownloader):
                     })
 
             elif block_type == "ok_video":
+                # Превью скачивается всегда (force=True обходит фильтр asset_types)
+                preview = block.get("previewUrl") or block.get("preview") or ""
+                if preview:
+                    assets.append({
+                        "url": preview,
+                        "alt": f"video-preview-{block.get('id', '')}",
+                        "force": True,
+                    })
+                # Видео скачивается через обычный механизм (фильтруется по asset_types)
                 video_url = self._extract_ok_video_player_url(block)
                 if video_url:
                     assets.append({
                         "url": video_url,
                         "alt": block.get("title") or f"video-{block.get('id', '')}",
                     })
-                else:
-                    preview = block.get("previewUrl") or block.get("preview") or ""
-                    if preview:
-                        assets.append({
-                            "url": preview,
-                            "alt": f"video-preview-{block.get('id', '')}",
-                        })
 
         return assets
 
@@ -281,16 +283,27 @@ class BoostyDownloader(BaseDownloader):
                 return f"\n🎵 **{title}**: [слушать]({url})\n"
 
         elif block_type == "ok_video":
+            # Определяем ссылку на видео (приоритет: локальный файл > ok.ru/video > videoembed)
             video_url = self._extract_ok_video_player_url(block)
+            video_link = ""
             if video_url:
-                local = asset_map.get(video_url)
-                if local:
-                    return f"\n[\U0001f4f9 Видео](assets/{local})\n"
-                return f"\n[\U0001f4f9 Видео]({video_url})\n"
+                local_video = asset_map.get(video_url)
+                if local_video:
+                    video_link = f"assets/{local_video}"
+                else:
+                    video_link = video_url
+            if not video_link:
+                video_link = self._extract_ok_video_fallback_url(block)
+            if not video_link:
+                return ""
 
-            fallback_url = self._extract_ok_video_fallback_url(block)
-            if fallback_url:
-                return f"\n[\U0001f4f9 Видео]({fallback_url})\n"
+            # Определяем превью-картинку
+            preview_url = block.get("previewUrl") or block.get("preview") or ""
+            local_preview = asset_map.get(preview_url) if preview_url else None
+
+            if local_preview:
+                return f"\n[![\U0001f4f9 Видео](assets/{local_preview})]({video_link})\n"
+            return f"\n[\U0001f4f9 Видео]({video_link})\n"
 
         elif block_type and block_type not in self._warned_unknown_block_types:
             print(f"  [boosty] Пропущен неподдерживаемый тип блока: {block_type}")
