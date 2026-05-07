@@ -26,7 +26,7 @@ def generate_hugo_config(config: Config):
         return json.dumps(value, ensure_ascii=False)
 
     content = f'''baseURL = {toml_str(config.hugo.base_url)}
-languageCode = {toml_str(config.hugo.language_code)}
+locale = {toml_str(config.hugo.language_code)}
 title = {toml_str(config.hugo.title)}
 relativeURLs = true
 
