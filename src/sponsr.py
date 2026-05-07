@@ -652,6 +652,8 @@ class SponsorDownloader(BaseDownloader):
         markdown = markdown.replace('@@@LBR@@@', r'\[')
         markdown = markdown.replace('@@@RBR@@@', r'\]')
         # Заменяем маркеры пробелов, вставленные в DOM
+        markdown = re.sub(r'[ \t]*@@@SP@@@[ \t]*', '@@@SP@@@', markdown)
+        markdown = re.sub(r'(?:@@@SP@@@)+', '@@@SP@@@', markdown)
         markdown = markdown.replace('@@@SP@@@', ' ')
 
         # Удаляем bidi-маркеры, которые ломают пробелы рядом с текстом
