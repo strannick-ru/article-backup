@@ -4,6 +4,20 @@
 Скрипт для локального бэкапа статей с платформ Sponsr.ru и Boosty.to.
 Конвертирует в Markdown, скачивает медиа, поддерживает инкрементальную синхронизацию.
 
+## Правила работы LLM/агента
+
+- Диалог с пользователем ведётся на русском языке.
+- Сообщения git-коммитов, аннотации git-тегов, заголовки GitHub Release и release notes пишутся на русском языке.
+- В сообщениях git-коммитов, аннотациях git-тегов, заголовках GitHub Release и release notes не использовать emoji.
+- Перед созданием git-коммита сначала показать пользователю предлагаемое сообщение и дождаться подтверждения.
+- Не коммитить generated artifacts: `dist/`, `*.egg-info/`, `site/public/`, quickstart-архивы `article-backup-v*-quickstart.tar.gz`.
+- Для release-коммитов использовать явный `git add` нужных файлов вместо `git add .`.
+- Не трогать пользовательские и локальные untracked-файлы без явной просьбы.
+- После release-сборки локальные generated artifacts можно удалить, если они больше не нужны для публикации.
+- Перед заявлением о завершении задачи указывать фактически выполненные проверки.
+
+## Архитектурный контекст
+
 ## Архитектура
 
 ```
@@ -72,6 +86,8 @@ src/
 19. Boosty: API отдаёт контент как массив блоков. `BLOCK_END` — разделитель параграфов, все inline-блоки (text, link) между двумя `BLOCK_END` конкатенируются в один параграф. Позиции стилей в блоках — глобальные (относительно начала параграфа), при применении нормализуются вычитанием offset-а предыдущих блоков.
 20. Sponsr: для консистентности разметки в `sync()` новые посты догружаются полным запросом по `post_id` (как в `download_single()`), так как HTML из `/more-posts` может отличаться от HTML страницы поста.
 
+## Эксплуатационный контекст
+
 ## Docker
 
 ```
@@ -117,12 +133,11 @@ site/
   - `/{platform}/{author}/index.xml`
   - `/{platform}/{author}/posts/index.xml` — title берётся из `author`, description — из `display_name` (записывается в `posts/_index.md`)
 
-## Соглашения
+## Проектные соглашения
 
 - Slug папки: `{YYYY-MM-DD}-{transliterated-title}-{short-hash}` (для обратной совместимости старые посты остаются без хеша)
 - Assets в подпапке `assets/` рядом с `index.md`
 - Белый список расширений: jpg, png, gif, webp, svg, mp4, webm, mov, mkv, avi, mp3, wav, flac, ogg, pdf
-- Сообщения git-коммитов, аннотации git-тегов и тексты release notes ведём на русском языке
 
 ## Типичные задачи
 
@@ -166,7 +181,7 @@ site/
 → `backup.py: generate_hugo_config()` — шаблон генерации hugo.toml
 → `src/config.py: HugoConfig` — dataclass с параметрами и значениями по умолчанию
 
-## Релизы и публикация
+## Release playbook
 
 **Структура пакета для PyPI:**
 - `backup.py` — основной модуль в корне (py-modules)
@@ -186,28 +201,33 @@ site/
 
 3. **Собрать пакет:**
    ```bash
+   rm -rf dist article_backup.egg-info
    python -m build
    python -m twine check dist/*
    ```
 
 4. **Опубликовать на PyPI:**
+   Если `TWINE_PASSWORD` задан в окружении, использовать non-interactive upload:
    ```bash
-   python -m twine upload dist/*
-   # Токен: pypi-...
+   TWINE_USERNAME="${TWINE_USERNAME:-__token__}" python -m twine upload dist/*
+   ```
+   Если токен не задан, остановиться и попросить пользователя выполнить команду локально:
+   ```bash
+   TWINE_USERNAME=__token__ TWINE_PASSWORD='pypi-...' python -m twine upload dist/*
    ```
 
 5. **Git релиз:**
    ```bash
-   git add .
-   git commit -m "Подготовка к релизу vX.Y.Z"
+   git add pyproject.toml CHANGELOG.md README.md
+   git commit -m "Релиз vX.Y.Z: краткое описание"
    git tag -a vX.Y.Z -m "Релиз vX.Y.Z"
    git push origin main
    git push origin vX.Y.Z
    ```
 
 6. **GitHub Release:**
-   - Создать через веб-интерфейс или `gh release create`
-   - Описание из CHANGELOG
+   - Создать через веб-интерфейс или `gh release create`.
+   - Заголовок и описание брать из CHANGELOG, на русском языке и без emoji.
    - Приложить quickstart архив:
      ```bash
      tar -czf article-backup-vX.Y.Z-quickstart.tar.gz \
@@ -223,3 +243,4 @@ site/
 - Проверить https://pypi.org/project/article-backup/
 - Протестировать установку: `pip install article-backup==X.Y.Z`
 - Проверить GitHub Release с assets
+- Удалить локальные generated artifacts, если они больше не нужны: `dist/`, `*.egg-info/`, `article-backup-vX.Y.Z-quickstart.tar.gz`
