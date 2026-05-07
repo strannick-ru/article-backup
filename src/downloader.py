@@ -98,6 +98,10 @@ class BaseDownloader(ABC):
         """Настройка сессии (cookies, headers)."""
         pass
 
+    def check_auth(self):
+        """Проверяет, что авторизация позволяет читать источник."""
+        raise NotImplementedError(f"{self.PLATFORM} не реализует проверку авторизации")
+
     @abstractmethod
     def fetch_posts_list(
         self,

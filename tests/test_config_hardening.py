@@ -17,6 +17,24 @@ class ConfigHardeningTests(unittest.TestCase):
 
             self.assertEqual(cfg.output_dir, Path("./backup"))
             self.assertEqual(cfg.sources, [])
+            self.assertEqual(cfg.sync.on_error, "stop")
+
+    def test_load_config_accepts_sync_continue_policy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg_path = Path(tmp) / "config.yaml"
+            cfg_path.write_text("sync:\n  on_error: continue\n", encoding="utf-8")
+
+            cfg = load_config(cfg_path)
+
+            self.assertEqual(cfg.sync.on_error, "continue")
+
+    def test_load_config_rejects_unknown_sync_policy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg_path = Path(tmp) / "config.yaml"
+            cfg_path.write_text("sync:\n  on_error: ignore\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "sync.on_error"):
+                load_config(cfg_path)
 
     def test_generate_hugo_config_escapes_quotes(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -43,6 +43,17 @@ class BoostyDownloader(BaseDownloader):
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         })
 
+    def check_auth(self):
+        """Проверяет доступ к ленте автора минимальным API-запросом."""
+        url = f"{self.API_BASE}/blog/{self.source.author}/post/?limit=1"
+
+        def do_request():
+            resp = self.session.get(url, timeout=self.TIMEOUT)
+            resp.raise_for_status()
+            return resp
+
+        retry_request(do_request, max_retries=3)
+
     def fetch_posts_list(
         self,
         existing_ids: set[str] | None = None,
