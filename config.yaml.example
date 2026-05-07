@@ -5,6 +5,11 @@ hugo:
   title: "Бэкап статей"
   language_code: "ru"
 
+sync:
+  # stop: остановиться до скачивания, если авторизация любого источника не прошла
+  # continue: пропустить проблемные источники и собрать сайт из доступных данных
+  on_error: stop
+
 auth:
   sponsr_cookie_file: ./sponsr_cookie.txt
   boosty_cookie_file: ./boosty_cookie.txt

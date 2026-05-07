@@ -91,16 +91,35 @@ def get_downloader(platform: str, config: Config, source: Source, db: Database):
         raise ValueError(f"Неизвестная платформа: {platform}")
 
 
-def sync_all(config: Config, db: Database):
+def preflight_sources(config: Config, db: Database):
+    """Проверяет доступность источников до начала синхронизации."""
+    ready_sources: list[Source] = []
+    errors: list[tuple[Source, Exception]] = []
+
+    for source in config.sources:
+        try:
+            downloader = get_downloader(source.platform, config, source, db)
+            downloader.check_auth()
+            ready_sources.append(source)
+        except Exception as e:
+            print(f"[{source.platform}] Ошибка проверки авторизации {source.author}: {e}")
+            errors.append((source, e))
+
+    return ready_sources, errors
+
+
+def sync_all(config: Config, db: Database, sources: list[Source] | None = None):
     """Синхронизирует всех авторов из конфига."""
     errors: list[tuple[Source, Exception]] = []
-    for source in config.sources:
+    for source in sources if sources is not None else config.sources:
         try:
             downloader = get_downloader(source.platform, config, source, db)
             downloader.sync()
         except Exception as e:
             print(f"[{source.platform}] Ошибка при синхронизации {source.author}: {e}")
             errors.append((source, e))
+            if config.sync.on_error == 'stop':
+                break
     return errors
 
 
@@ -181,7 +200,15 @@ def main():
             if not config.sources:
                 print("Нет источников в конфиге. Добавьте секцию 'sources'.")
                 sys.exit(1)
-            sync_errors = sync_all(config, db)
+            ready_sources, preflight_errors = preflight_sources(config, db)
+            if preflight_errors:
+                sync_errors.extend(preflight_errors)
+                if config.sync.on_error == 'stop':
+                    print("\nОстановлено из-за ошибок проверки авторизации.")
+                else:
+                    print("\nИсточники с ошибками проверки авторизации будут пропущены.")
+            if not preflight_errors or config.sync.on_error == 'continue':
+                sync_errors.extend(sync_all(config, db, ready_sources))
 
     ensure_site_content_link(config)
     generate_hugo_config(config)
@@ -190,7 +217,8 @@ def main():
         print(f"\nЗавершено с ошибками: {len(sync_errors)}")
         for source, error in sync_errors:
             print(f"  - [{source.platform}] {source.author}: {error}")
-        sys.exit(1)
+        if config.sync.on_error == 'stop':
+            sys.exit(1)
 
     print("\nГотово!")
 

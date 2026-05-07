@@ -35,11 +35,17 @@ class HugoConfig:
 
 
 @dataclass
+class SyncConfig:
+    on_error: Literal['stop', 'continue'] = "stop"
+
+
+@dataclass
 class Config:
     output_dir: Path
     auth: Auth
     sources: list[Source] = field(default_factory=list)
     hugo: HugoConfig = field(default_factory=HugoConfig)
+    sync: SyncConfig = field(default_factory=SyncConfig)
 
 
 def load_config(config_path: Path) -> Config:
@@ -105,7 +111,18 @@ def load_config(config_path: Path) -> Config:
         default_theme=hugo_data.get('default_theme', HugoConfig.default_theme),
     )
 
-    return Config(output_dir=output_dir, auth=auth, sources=sources, hugo=hugo)
+    # sync
+    sync_data = data.get('sync', {})
+    if sync_data is None:
+        sync_data = {}
+    if not isinstance(sync_data, dict):
+        raise ValueError("Секция 'sync' должна быть объектом")
+    sync_on_error = sync_data.get('on_error', SyncConfig.on_error)
+    if sync_on_error not in ('stop', 'continue'):
+        raise ValueError("sync.on_error должен быть 'stop' или 'continue'")
+    sync = SyncConfig(on_error=sync_on_error)
+
+    return Config(output_dir=output_dir, auth=auth, sources=sources, hugo=hugo, sync=sync)
 
 
 def _to_path(value: str | None) -> Path | None:

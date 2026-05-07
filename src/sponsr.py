@@ -44,6 +44,18 @@ class SponsorDownloader(BaseDownloader):
             'X-Requested-With': 'XMLHttpRequest',
         })
 
+    def check_auth(self):
+        """Проверяет доступ к проекту минимальным API-запросом."""
+        project_id = self._get_project_id()
+        api_url = f"https://sponsr.ru/project/{project_id}/more-posts/?offset=0"
+
+        def do_request():
+            resp = self.session.get(api_url, timeout=self.TIMEOUT)
+            resp.raise_for_status()
+            return resp
+
+        retry_request(do_request, max_retries=3)
+
     def _get_project_id(self) -> str:
         """Получает project_id со страницы проекта."""
         if self._project_id:
