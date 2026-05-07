@@ -1,5 +1,5 @@
 baseURL = 'http://localhost:1313/'
-languageCode = 'ru'
+locale = 'ru'
 title = 'Бэкап статей'
 relativeURLs = true
 

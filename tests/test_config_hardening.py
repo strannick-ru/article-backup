@@ -60,6 +60,8 @@ class ConfigHardeningTests(unittest.TestCase):
 
                 self.assertIn('title = "Bob\'s \\"backup\\""', toml)
                 self.assertIn('baseURL = "https://example.com/a\\"b"', toml)
+                self.assertIn('locale = "ru"', toml)
+                self.assertNotIn('languageCode', toml)
                 self.assertIn('default_theme = "light\\"mode"', toml)
             finally:
                 os.chdir(old_cwd)
