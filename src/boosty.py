@@ -3,6 +3,7 @@
 
 import json
 from datetime import datetime, timezone
+from urllib.parse import parse_qsl, urlencode, urlparse
 
 import requests
 
@@ -158,7 +159,7 @@ class BoostyDownloader(BaseDownloader):
         content_blocks = raw_data.get("data", [])
 
         # Извлекаем assets
-        assets = self._extract_assets(content_blocks)
+        assets = self._extract_assets(content_blocks, raw_data.get("signedQuery", ""))
 
         return Post(
             post_id=post_id,
@@ -170,7 +171,7 @@ class BoostyDownloader(BaseDownloader):
             assets=assets,
         )
 
-    def _extract_assets(self, blocks: list[dict]) -> list[dict]:
+    def _extract_assets(self, blocks: list[dict], signed_query: str = "") -> list[dict]:
         """Извлекает URL медиафайлов из блоков контента."""
         assets = []
 
@@ -190,6 +191,16 @@ class BoostyDownloader(BaseDownloader):
                 if url:
                     assets.append({
                         "url": url,
+                        "download_url": self._sign_media_url(url, signed_query),
+                        "alt": block.get("title", block.get("id", "")),
+                    })
+
+            elif block_type == "file":
+                url = block.get("url", "")
+                if url:
+                    assets.append({
+                        "url": url,
+                        "download_url": self._sign_media_url(url, signed_query),
                         "alt": block.get("title", block.get("id", "")),
                     })
 
@@ -244,7 +255,7 @@ class BoostyDownloader(BaseDownloader):
                 continue
 
             # Block-level элементы разрывают параграф
-            if block_type in ("image", "audio_file", "ok_video"):
+            if block_type in ("image", "audio_file", "file", "ok_video"):
                 if current_paragraph:
                     lines.append("".join(current_paragraph))
                     current_paragraph = []
@@ -293,6 +304,15 @@ class BoostyDownloader(BaseDownloader):
             elif url:
                 return f"\n🎵 **{title}**: [слушать]({url})\n"
 
+        elif block_type == "file":
+            url = block.get("url", "")
+            title = block.get("title") or block.get("id") or "file"
+            local = asset_map.get(url)
+            if local:
+                return f"\n📎 [{title}](assets/{local})\n"
+            elif url:
+                return f"\n📎 [{title}]({url})\n"
+
         elif block_type == "ok_video":
             # Определяем ссылку на видео (приоритет: локальный файл > ok.ru/video > videoembed)
             video_url = self._extract_ok_video_player_url(block)
@@ -321,6 +341,20 @@ class BoostyDownloader(BaseDownloader):
             self._warned_unknown_block_types.add(block_type)
 
         return ""
+
+    def _sign_media_url(self, url: str, signed_query: str) -> str:
+        """Добавляет signedQuery Boosty к URL медиа, не перезаписывая существующие параметры."""
+        if not url or not signed_query:
+            return url
+
+        parsed = urlparse(url)
+        params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        query = signed_query[1:] if signed_query.startswith("?") else signed_query
+        for key, value in parse_qsl(query, keep_blank_values=True):
+            if key not in params:
+                params[key] = value
+
+        return parsed._replace(query=urlencode(params)).geturl()
 
     def _extract_ok_video_player_url(self, block: dict) -> str:
         """Выбирает лучший прямой URL видео из ok_video блока."""

@@ -143,5 +143,75 @@ class BoostyParagraphTests(unittest.TestCase):
         self.assertIn(')\n\nТекст после', md)
 
 
+class BoostySignedMediaTests(unittest.TestCase):
+    def setUp(self):
+        self.config = Config(output_dir=Path('/tmp/test'), auth=Auth())
+        self.source = Source(platform='boosty', author='test_author')
+        self.db = MagicMock(spec=Database)
+        with patch('src.boosty.load_cookie', return_value='fake'), \
+             patch('src.boosty.load_auth_header', return_value='Bearer fake'):
+            self.downloader = BoostyDownloader(self.config, self.source, self.db)
+
+    def test_parse_post_signs_audio_asset_with_signed_query(self):
+        raw = {
+            'id': 'post-id',
+            'title': 'Post',
+            'createdAt': 1735689600,
+            'signedQuery': '?sign=abc&expires=123',
+            'data': [
+                {
+                    'type': 'audio_file',
+                    'url': 'https://cdn.boosty.to/audio/audio-id',
+                    'title': 'Audio title.mp3',
+                }
+            ],
+        }
+
+        post = self.downloader._parse_post(raw)
+
+        self.assertEqual(post.assets[0]['url'], 'https://cdn.boosty.to/audio/audio-id')
+        self.assertEqual(
+            post.assets[0]['download_url'],
+            'https://cdn.boosty.to/audio/audio-id?sign=abc&expires=123',
+        )
+
+    def test_parse_post_signs_file_asset_with_signed_query(self):
+        raw = {
+            'id': 'post-id',
+            'title': 'Post',
+            'createdAt': 1735689600,
+            'signedQuery': 'sign=abc&expires=123',
+            'data': [
+                {
+                    'type': 'file',
+                    'url': 'https://cdn.boosty.to/file/file-id?name=doc.pdf',
+                    'title': 'doc.pdf',
+                }
+            ],
+        }
+
+        post = self.downloader._parse_post(raw)
+
+        self.assertEqual(post.assets[0]['url'], 'https://cdn.boosty.to/file/file-id?name=doc.pdf')
+        self.assertEqual(
+            post.assets[0]['download_url'],
+            'https://cdn.boosty.to/file/file-id?name=doc.pdf&sign=abc&expires=123',
+        )
+
+    def test_file_block_uses_local_asset_when_downloaded(self):
+        block = {
+            'type': 'file',
+            'url': 'https://cdn.boosty.to/file/file-id',
+            'title': 'doc.pdf',
+        }
+
+        md = self.downloader._block_to_markdown(
+            block,
+            {'https://cdn.boosty.to/file/file-id': 'doc.pdf'},
+        )
+
+        self.assertIn('[doc.pdf](assets/doc.pdf)', md)
+
+
 if __name__ == '__main__':
     unittest.main()

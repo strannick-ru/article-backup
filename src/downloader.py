@@ -318,6 +318,7 @@ class BaseDownloader(ABC):
 
         def download_one(asset: dict) -> tuple[str, str | None]:
             url = asset["url"]
+            request_url = asset.get("download_url", url)
             force = asset.get("force", False)
             try:
                 # Предварительная проверка (если расширение есть)
@@ -326,7 +327,7 @@ class BaseDownloader(ABC):
                     return url, None
 
                 def do_request():
-                    resp = self.session.get(url, stream=True, timeout=self.TIMEOUT)
+                    resp = self.session.get(request_url, stream=True, timeout=self.TIMEOUT)
                     resp.raise_for_status()
                     return resp
 

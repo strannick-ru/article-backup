@@ -143,6 +143,38 @@ class AssetDedupTests(unittest.TestCase):
             for fn in filenames:
                 self.assertTrue((assets_dir / fn).exists(), msg=f"missing file: {fn}")
 
+    def test_download_assets_uses_download_url_but_maps_original_url(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            assets_dir = tmp_path / "assets"
+            assets_dir.mkdir(parents=True, exist_ok=True)
+
+            config = Config(output_dir=tmp_path, auth=Auth())
+            source = Source(platform="boosty", author="author", download_assets=True)
+            dl = _DummyDownloader(config, source, cast(Database, _DummyDB()))
+
+            requested_urls = []
+
+            def fake_get(url: str, stream: bool = True, timeout=None):
+                requested_urls.append(url)
+                return _FakeResponse("audio/mpeg", body=b"audio")
+
+            dl.session.get = fake_get  # type: ignore[method-assign]
+
+            asset_map = dl._download_assets(
+                [
+                    {
+                        "url": "https://cdn.boosty.to/audio/audio-id",
+                        "download_url": "https://cdn.boosty.to/audio/audio-id?sign=abc",
+                        "alt": "audio.mp3",
+                    }
+                ],
+                assets_dir,
+            )
+
+            self.assertEqual(requested_urls, ["https://cdn.boosty.to/audio/audio-id?sign=abc"])
+            self.assertIn("https://cdn.boosty.to/audio/audio-id", asset_map)
+
 
 if __name__ == "__main__":
     unittest.main()
