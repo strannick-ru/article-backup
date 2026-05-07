@@ -119,6 +119,7 @@ class SponsorNormalizeTests(unittest.TestCase):
         # Ожидаем пробелы вокруг **жирное**
         self.assertIn('слово **жирное** слово', result)
         self.assertNotIn('слово**жирное**слово', result)
+        self.assertNotIn('**жирное**  слово', result)
 
     def test_real_world_case_from_issue(self):
         """Тест реального случая из issue."""
