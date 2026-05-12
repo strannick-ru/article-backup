@@ -33,6 +33,7 @@ def retry_request(
     base_delay: float = 1.0,
     max_delay: float = 30.0,
     backoff_factor: float = 2.0,
+    delays: list[float] | None = None,
 ):
     """
     Выполняет функцию с retry и exponential backoff.
@@ -43,6 +44,7 @@ def retry_request(
         base_delay: Начальная задержка в секундах
         max_delay: Максимальная задержка в секундах
         backoff_factor: Множитель для увеличения задержки
+        delays: Явная последовательность задержек между попытками
     """
     last_exception = None
     delay = base_delay
@@ -58,8 +60,11 @@ def retry_request(
                     raise
 
             if attempt < max_retries - 1:
-                time.sleep(delay)
-                delay = min(delay * backoff_factor, max_delay)
+                if delays:
+                    time.sleep(delays[min(attempt, len(delays) - 1)])
+                else:
+                    time.sleep(delay)
+                    delay = min(delay * backoff_factor, max_delay)
 
     if last_exception:
         raise last_exception
@@ -375,9 +380,8 @@ class BaseDownloader(ABC):
 
                 filename = retry_request(
                     download_to_file,
-                    max_retries=5,
-                    base_delay=3,
-                    max_delay=5,
+                    max_retries=10,
+                    delays=[3, 5, 7, 10, 15, 15, 15, 15, 15],
                 )
                 if not filename:
                     return url, None

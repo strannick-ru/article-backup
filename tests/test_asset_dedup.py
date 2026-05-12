@@ -214,7 +214,7 @@ class AssetDedupTests(unittest.TestCase):
             self.assertEqual(requested_urls, ["https://cdn.boosty.to/audio/audio-id?sign=abc"])
             self.assertIn("https://cdn.boosty.to/audio/audio-id", asset_map)
 
-    def test_download_assets_retries_network_errors_five_times(self):
+    def test_download_assets_retries_network_errors_ten_times(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             assets_dir = tmp_path / "assets"
@@ -229,19 +229,23 @@ class AssetDedupTests(unittest.TestCase):
             def fake_get(url: str, stream: bool = True, timeout=None):
                 nonlocal attempts
                 attempts += 1
-                if attempts < 5:
+                if attempts < 10:
                     raise requests.ConnectionError("temporary cdn failure")
                 return _FakeResponse("audio/mpeg", body=b"audio")
 
             dl.session.get = fake_get  # type: ignore[method-assign]
 
-            with patch("src.downloader.time.sleep"):
+            with patch("src.downloader.time.sleep") as sleep_mock:
                 asset_map = dl._download_assets(
                     [{"url": "https://cdn.boosty.to/audio/audio-id", "alt": "audio.mp3"}],
                     assets_dir,
                 )
 
-            self.assertEqual(attempts, 5)
+            self.assertEqual(attempts, 10)
+            self.assertEqual(
+                [call.args[0] for call in sleep_mock.call_args_list],
+                [3, 5, 7, 10, 15, 15, 15, 15, 15],
+            )
             self.assertIn("https://cdn.boosty.to/audio/audio-id", asset_map)
 
     def test_download_assets_retries_stream_errors_and_removes_partial_file(self):
