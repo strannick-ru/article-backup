@@ -326,43 +326,61 @@ class BaseDownloader(ABC):
                 if ext and not force and not should_download_asset(url, None, self.source.asset_types):
                     return url, None
 
-                def do_request():
+                filename: str | None = None
+                filepath: Path | None = None
+
+                def download_to_file():
+                    nonlocal filename, filepath
                     resp = self.session.get(request_url, stream=True, timeout=self.TIMEOUT)
-                    resp.raise_for_status()
-                    return resp
+                    try:
+                        resp.raise_for_status()
+                        content_type = resp.headers.get('Content-Type', '')
 
-                response = retry_request(do_request, max_retries=3)
-                try:
-                    content_type = response.headers.get('Content-Type', '')
+                        # Полная проверка после получения Content-Type
+                        if not force and not should_download_asset(url, content_type, self.source.asset_types):
+                            return None
 
-                    # Полная проверка после получения Content-Type
-                    if not force and not should_download_asset(url, content_type, self.source.asset_types):
-                        return url, None
+                        if filename is None or filepath is None:
+                            filename_base = self._make_asset_filename(url, content_type, asset.get('alt'))
 
-                    filename_base = self._make_asset_filename(url, content_type, asset.get('alt'))
+                            with used_lock:
+                                filename = filename_base
+                                filepath = assets_dir / filename
+                                if filename in used_filenames or filepath.exists():
+                                    filename = self._deduplicate_filename(filename, url)
+                                    filepath = assets_dir / filename
 
-                    with used_lock:
-                        filename = filename_base
-                        filepath = assets_dir / filename
-                        if filename in used_filenames or filepath.exists():
-                            filename = self._deduplicate_filename(filename, url)
-                            filepath = assets_dir / filename
+                                # На всякий случай добиваемся уникальности в рамках сессии
+                                while filename in used_filenames or filepath.exists():
+                                    filename = self._deduplicate_filename(filename, url + filename)
+                                    filepath = assets_dir / filename
 
-                        # На всякий случай добиваемся уникальности в рамках сессии
-                        while filename in used_filenames or filepath.exists():
-                            filename = self._deduplicate_filename(filename, url + filename)
-                            filepath = assets_dir / filename
+                                used_filenames.add(filename)
 
-                        used_filenames.add(filename)
-
-                    if not filepath.exists():
                         with open(filepath, 'wb') as f:
-                            for chunk in response.iter_content(chunk_size=8192):
-                                f.write(chunk)
-                finally:
-                    close = getattr(response, 'close', None)
-                    if callable(close):
-                        close()
+                            for chunk in resp.iter_content(chunk_size=8192):
+                                if chunk:
+                                    f.write(chunk)
+                        return filename
+                    except Exception as e:
+                        if filepath and filepath.exists():
+                            filepath.unlink()
+                        if isinstance(e, OSError) and not isinstance(e, requests.RequestException):
+                            raise requests.RequestException(str(e)) from e
+                        raise
+                    finally:
+                        close = getattr(resp, 'close', None)
+                        if callable(close):
+                            close()
+
+                filename = retry_request(
+                    download_to_file,
+                    max_retries=5,
+                    base_delay=3,
+                    max_delay=5,
+                )
+                if not filename:
+                    return url, None
 
                 return url, filename
             except requests.RequestException as e:

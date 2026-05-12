@@ -2,6 +2,9 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import cast
+from unittest.mock import patch
+
+import requests
 
 from src.config import Auth, Config, Source
 from src.database import Database
@@ -19,6 +22,26 @@ class _FakeResponse:
     def iter_content(self, chunk_size: int = 8192):
         # Yield at least one chunk to trigger file write.
         yield self._body
+
+    def close(self):
+        return None
+
+
+class _FailingStreamResponse(_FakeResponse):
+    def iter_content(self, chunk_size: int = 8192):
+        yield self._body
+        raise requests.exceptions.ChunkedEncodingError("stream interrupted")
+
+
+class _HttpErrorResponse(_FakeResponse):
+    def __init__(self, status_code: int):
+        super().__init__("text/plain", b"")
+        self.status_code = status_code
+
+    def raise_for_status(self):
+        response = requests.Response()
+        response.status_code = self.status_code
+        raise requests.HTTPError(f"{self.status_code} error", response=response)
 
 
 class _DummyDB:
@@ -49,6 +72,22 @@ class _DummyDownloader(BaseDownloader):
 
     def _to_markdown(self, post, asset_map):
         raise NotImplementedError
+
+
+class _FailingWriteFile:
+    def __init__(self, wrapped):
+        self._wrapped = wrapped
+
+    def __enter__(self):
+        self._wrapped.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return self._wrapped.__exit__(exc_type, exc_val, exc_tb)
+
+    def write(self, data: bytes):
+        self._wrapped.write(b"partial")
+        raise OSError("temporary disk write failure")
 
 
 class AssetDedupTests(unittest.TestCase):
@@ -174,6 +213,135 @@ class AssetDedupTests(unittest.TestCase):
 
             self.assertEqual(requested_urls, ["https://cdn.boosty.to/audio/audio-id?sign=abc"])
             self.assertIn("https://cdn.boosty.to/audio/audio-id", asset_map)
+
+    def test_download_assets_retries_network_errors_five_times(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            assets_dir = tmp_path / "assets"
+            assets_dir.mkdir(parents=True, exist_ok=True)
+
+            config = Config(output_dir=tmp_path, auth=Auth())
+            source = Source(platform="boosty", author="author", download_assets=True)
+            dl = _DummyDownloader(config, source, cast(Database, _DummyDB()))
+
+            attempts = 0
+
+            def fake_get(url: str, stream: bool = True, timeout=None):
+                nonlocal attempts
+                attempts += 1
+                if attempts < 5:
+                    raise requests.ConnectionError("temporary cdn failure")
+                return _FakeResponse("audio/mpeg", body=b"audio")
+
+            dl.session.get = fake_get  # type: ignore[method-assign]
+
+            with patch("src.downloader.time.sleep"):
+                asset_map = dl._download_assets(
+                    [{"url": "https://cdn.boosty.to/audio/audio-id", "alt": "audio.mp3"}],
+                    assets_dir,
+                )
+
+            self.assertEqual(attempts, 5)
+            self.assertIn("https://cdn.boosty.to/audio/audio-id", asset_map)
+
+    def test_download_assets_retries_stream_errors_and_removes_partial_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            assets_dir = tmp_path / "assets"
+            assets_dir.mkdir(parents=True, exist_ok=True)
+
+            config = Config(output_dir=tmp_path, auth=Auth())
+            source = Source(platform="boosty", author="author", download_assets=True)
+            dl = _DummyDownloader(config, source, cast(Database, _DummyDB()))
+
+            attempts = 0
+
+            def fake_get(url: str, stream: bool = True, timeout=None):
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    return _FailingStreamResponse("audio/mpeg", body=b"partial")
+                return _FakeResponse("audio/mpeg", body=b"complete")
+
+            dl.session.get = fake_get  # type: ignore[method-assign]
+
+            with patch("src.downloader.time.sleep"):
+                asset_map = dl._download_assets(
+                    [{"url": "https://cdn.boosty.to/audio/audio-id", "alt": "audio.mp3"}],
+                    assets_dir,
+                )
+
+            self.assertEqual(attempts, 2)
+            filename = asset_map["https://cdn.boosty.to/audio/audio-id"]
+            self.assertEqual((assets_dir / filename).read_bytes(), b"complete")
+            self.assertFalse(any(path.read_bytes() == b"partial" for path in assets_dir.iterdir()))
+
+    def test_download_assets_does_not_retry_permanent_404(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            assets_dir = tmp_path / "assets"
+            assets_dir.mkdir(parents=True, exist_ok=True)
+
+            config = Config(output_dir=tmp_path, auth=Auth())
+            source = Source(platform="boosty", author="author", download_assets=True)
+            dl = _DummyDownloader(config, source, cast(Database, _DummyDB()))
+
+            attempts = 0
+
+            def fake_get(url: str, stream: bool = True, timeout=None):
+                nonlocal attempts
+                attempts += 1
+                return _HttpErrorResponse(404)
+
+            dl.session.get = fake_get  # type: ignore[method-assign]
+
+            with patch("src.downloader.time.sleep"):
+                asset_map = dl._download_assets(
+                    [{"url": "https://cdn.boosty.to/audio/missing-id", "alt": "missing.mp3"}],
+                    assets_dir,
+                )
+
+            self.assertEqual(attempts, 1)
+            self.assertEqual(asset_map, {})
+
+    def test_download_assets_retries_write_errors_and_removes_partial_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            assets_dir = tmp_path / "assets"
+            assets_dir.mkdir(parents=True, exist_ok=True)
+
+            config = Config(output_dir=tmp_path, auth=Auth())
+            source = Source(platform="boosty", author="author", download_assets=True)
+            dl = _DummyDownloader(config, source, cast(Database, _DummyDB()))
+
+            def fake_get(url: str, stream: bool = True, timeout=None):
+                return _FakeResponse("audio/mpeg", body=b"complete")
+
+            dl.session.get = fake_get  # type: ignore[method-assign]
+
+            real_open = open
+            open_attempts = 0
+
+            def flaky_open(path, mode="r", *args, **kwargs):
+                nonlocal open_attempts
+                if "wb" in mode:
+                    open_attempts += 1
+                    wrapped = real_open(path, mode, *args, **kwargs)
+                    if open_attempts == 1:
+                        return _FailingWriteFile(wrapped)
+                    return wrapped
+                return real_open(path, mode, *args, **kwargs)
+
+            with patch("src.downloader.time.sleep"), patch("builtins.open", flaky_open):
+                asset_map = dl._download_assets(
+                    [{"url": "https://cdn.boosty.to/audio/audio-id", "alt": "audio.mp3"}],
+                    assets_dir,
+                )
+
+            self.assertEqual(open_attempts, 2)
+            filename = asset_map["https://cdn.boosty.to/audio/audio-id"]
+            self.assertEqual((assets_dir / filename).read_bytes(), b"complete")
+            self.assertFalse(any(path.read_bytes() == b"partial" for path in assets_dir.iterdir()))
 
 
 if __name__ == "__main__":
