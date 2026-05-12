@@ -27,8 +27,12 @@ def generate_hugo_config(config: Config):
 
     content = f'''baseURL = {toml_str(config.hugo.base_url)}
 locale = {toml_str(config.hugo.language_code)}
+defaultContentLanguage = {toml_str(config.hugo.language_code)}
 title = {toml_str(config.hugo.title)}
 relativeURLs = true
+
+[languages.{config.hugo.language_code}]
+  locale = {toml_str(config.hugo.language_code)}
 
 [params]
   default_theme = {toml_str(config.hugo.default_theme)}

@@ -1,7 +1,11 @@
 baseURL = 'http://localhost:1313/'
 locale = 'ru'
+defaultContentLanguage = 'ru'
 title = 'Бэкап статей'
 relativeURLs = true
+
+[languages.ru]
+  locale = 'ru'
 
 [markup.goldmark.renderer]
   unsafe = true
