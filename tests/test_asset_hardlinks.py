@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "site" / "deduplicate-assets.sh"
@@ -134,6 +136,50 @@ class LocalBuildHardlinkTests(unittest.TestCase):
                 self.assertFalse(stale.exists())
                 self.assertEqual(source_file.stat().st_ino, public_file.stat().st_ino)
                 self.assertEqual(source_file.read_bytes(), b"video")
+
+
+class DockerBuildHardlinkTests(unittest.TestCase):
+    def test_compose_hugo_commands_clean_public_and_stop_on_failure(self):
+        for filename in ("docker-compose.yml", "docker-compose-dev.yml"):
+            compose = yaml.safe_load((ROOT / filename).read_text(encoding="utf-8"))
+            command = compose["services"]["hugo"]["command"][0]
+            self.assertIn("set -e", command, filename)
+            self.assertIn("rm -rf public", command, filename)
+            self.assertLess(command.index("rm -rf public"), command.index("hugo --minify"))
+
+    def test_run_docker_hugo_deduplicates_on_host(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "site").mkdir()
+            (root / "run-docker.sh").write_bytes((ROOT / "run-docker.sh").read_bytes())
+            (root / "site/deduplicate-assets.sh").write_bytes(SCRIPT.read_bytes())
+            (root / "run-docker.sh").chmod(0o755)
+            (root / "site/deduplicate-assets.sh").chmod(0o755)
+
+            relative = Path("boosty/author/posts/post/assets/file.mp4")
+            source_file = root / "backup" / relative
+            public_file = root / "site/public" / relative
+            source_file.parent.mkdir(parents=True)
+            public_file.parent.mkdir(parents=True)
+            source_file.write_bytes(b"video")
+            public_file.write_bytes(b"video")
+
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            fake_docker = fake_bin / "docker"
+            fake_docker.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            fake_docker.chmod(0o755)
+            env = os.environ.copy()
+            env["PATH"] = f"{fake_bin}:{env['PATH']}"
+
+            subprocess.run(
+                ["bash", "run-docker.sh", "hugo"],
+                cwd=root,
+                check=True,
+                env=env,
+            )
+
+            self.assertEqual(source_file.stat().st_ino, public_file.stat().st_ino)
 
 
 if __name__ == "__main__":

@@ -39,6 +39,14 @@ update_host_symlink() {
 # Обновляем симлинк перед запуском
 update_host_symlink
 
+# Hardlinks создаются на хосте: отдельные bind mounts внутри контейнера
+# могут считаться разными файловыми системами.
+deduplicate_public_assets() {
+    if [ -d "$HOST_BACKUP_DIR" ] && [ -d "site/public" ]; then
+        site/deduplicate-assets.sh "$HOST_BACKUP_DIR" "site/public"
+    fi
+}
+
 # Логика запуска
 if [ "$1" == "build" ]; then
     echo "Сборка образов..."
@@ -47,6 +55,7 @@ if [ "$1" == "build" ]; then
 elif [ "$1" == "hugo" ]; then
     echo "Генерация сайта..."
     docker compose run --rm hugo
+    deduplicate_public_assets
 
 elif [ "$1" == "shell" ]; then
     echo "Запуск оболочки..."
@@ -59,4 +68,5 @@ else
     
     echo "Генерация сайта..."
     docker compose run --rm hugo
+    deduplicate_public_assets
 fi

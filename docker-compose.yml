@@ -20,6 +20,8 @@ services:
     entrypoint: ["sh", "-c"]
     command:
       - |
+        set -e
+        rm -rf public
         hugo --minify
         for d in public/sponsr/*/ public/boosty/*/; do
           [ -d "$$d" ] && cp -r public/css "$$d" && echo "CSS → $$d"
