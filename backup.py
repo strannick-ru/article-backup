@@ -50,6 +50,21 @@ relativeURLs = true
 [services.rss]
   limit = 50
 '''
+
+    # Hugo игнорирует site/content, если это симлинк за пределы корня проекта,
+    # поэтому каталог бэкапа подключается через module.mounts. В Docker бэкап
+    # монтируется прямо в /site/content, и mount не нужен.
+    if not os.environ.get('BACKUP_OUTPUT_DIR'):
+        rel_path = os.path.relpath(
+            config.output_dir.resolve(), hugo_toml.parent.resolve()
+        )
+        content += f'''
+[module]
+  [[module.mounts]]
+    source = {toml_str(rel_path)}
+    target = "content"
+'''
+
     hugo_toml.write_text(content, encoding='utf-8')
 
 
