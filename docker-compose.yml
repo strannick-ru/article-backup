@@ -24,5 +24,7 @@ services:
         rm -rf public
         hugo --minify
         for d in public/sponsr/*/ public/boosty/*/; do
-          [ -d "$$d" ] && cp -r public/css "$$d" && echo "CSS → $$d"
+          [ -d "$$d" ] || continue
+          cp -r public/css "$$d"
+          echo "CSS → $$d"
         done

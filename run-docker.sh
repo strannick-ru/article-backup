@@ -18,26 +18,23 @@ HOST_BACKUP_DIR="${HOST_BACKUP_DIR/#\~/$HOME}"
 
 echo "Используется директория бэкапа: $HOST_BACKUP_DIR"
 
-# Функция для обновления симлинка на хосте
-update_host_symlink() {
+# Hugo игнорирует content, если это симлинк за пределы корня проекта, и молча
+# собирает пустой сайт. Docker резолвит цель bind-mount через такой симлинк и
+# монтирует бэкап мимо /site/content. Поэтому нужен обычный каталог.
+ensure_host_content_mountpoint() {
     if [ -d "site" ]; then
-        TARGET="$HOST_BACKUP_DIR"
-        # Если путь относительный (не начинается с /), добавляем ../ т.к. линк лежит в site/
-        if [[ "$HOST_BACKUP_DIR" != /* ]]; then
-            # Убираем ./ в начале, если есть
-            CLEAN_PATH=$(echo "$HOST_BACKUP_DIR" | sed 's|^\./||')
-            TARGET="../$CLEAN_PATH"
+        if [ -L "site/content" ]; then
+            rm -f site/content
+            echo "Удалён симлинк site/content (мешает сборке Hugo)"
         fi
-        
-        # Создаем/обновляем симлинк
-        rm -f site/content
-        ln -s "$TARGET" site/content
-        echo "Обновлен симлинк: site/content -> $TARGET"
+
+        mkdir -p site/content
+        echo "Точка монтирования: site/content -> $HOST_BACKUP_DIR"
     fi
 }
 
-# Обновляем симлинк перед запуском
-update_host_symlink
+# Готовим точку монтирования перед запуском
+ensure_host_content_mountpoint
 
 # Hardlinks создаются на хосте: отдельные bind mounts внутри контейнера
 # могут считаться разными файловыми системами.

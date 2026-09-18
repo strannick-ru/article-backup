@@ -147,6 +147,38 @@ class DockerBuildHardlinkTests(unittest.TestCase):
             self.assertIn("rm -rf public", command, filename)
             self.assertLess(command.index("rm -rf public"), command.index("hugo --minify"))
 
+    def test_compose_hugo_command_succeeds_when_platform_missing(self):
+        # Ненулевой код возврата контейнера обрывает run-docker.sh до дедупликации.
+        for filename in ("docker-compose.yml", "docker-compose-dev.yml"):
+            compose = yaml.safe_load((ROOT / filename).read_text(encoding="utf-8"))
+            command = compose["services"]["hugo"]["command"][0].replace("$$", "$")
+
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                fake_bin = root / "bin"
+                fake_bin.mkdir()
+                fake_hugo = fake_bin / "hugo"
+                fake_hugo.write_text(
+                    "#!/bin/sh\nmkdir -p public/css public/sponsr/demo\n"
+                    "echo css > public/css/reader.css\n",
+                    encoding="utf-8",
+                )
+                fake_hugo.chmod(0o755)
+
+                env = os.environ.copy()
+                env["PATH"] = f"{fake_bin}:{env['PATH']}"
+
+                result = subprocess.run(
+                    ["sh", "-c", command],
+                    cwd=root,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                )
+
+                self.assertEqual(result.returncode, 0, f"{filename}: {result.stderr}")
+                self.assertTrue((root / "public/sponsr/demo/css/reader.css").exists())
+
     def test_run_docker_hugo_deduplicates_on_host(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
