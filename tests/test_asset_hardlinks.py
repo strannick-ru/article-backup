@@ -94,5 +94,47 @@ class AssetHardlinkTests(unittest.TestCase):
         self.assertNotEqual(source_file.stat().st_ino, outside_target.stat().st_ino)
 
 
+class LocalBuildHardlinkTests(unittest.TestCase):
+    def test_build_cleans_public_before_hugo_and_deduplicates_afterwards(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            site = root / "site"
+            site.mkdir()
+            (site / "build.sh").write_bytes((ROOT / "site/build.sh").read_bytes())
+            (site / "deduplicate-assets.sh").write_bytes(SCRIPT.read_bytes())
+            (site / "build.sh").chmod(0o755)
+            (site / "deduplicate-assets.sh").chmod(0o755)
+
+            relative = Path("boosty/author/posts/post/assets/file.mp4")
+            source_file = site / "content" / relative
+            source_file.parent.mkdir(parents=True)
+            source_file.write_bytes(b"video")
+            stale = site / "public/stale.txt"
+            stale.parent.mkdir()
+            stale.write_text("stale", encoding="utf-8")
+
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            fake_hugo = fake_bin / "hugo"
+            fake_hugo.write_text(
+                "#!/bin/bash\n"
+                "[ ! -e public/stale.txt ] || exit 42\n"
+                "mkdir -p public/boosty/author/posts/post/assets public/css\n"
+                "cp content/boosty/author/posts/post/assets/file.mp4 "
+                "public/boosty/author/posts/post/assets/file.mp4\n",
+                encoding="utf-8",
+            )
+            fake_hugo.chmod(0o755)
+            env = os.environ.copy()
+            env["PATH"] = f"{fake_bin}:{env['PATH']}"
+
+            public_file = site / "public" / relative
+            for _ in range(2):
+                subprocess.run(["bash", str(site / "build.sh")], check=True, env=env)
+                self.assertFalse(stale.exists())
+                self.assertEqual(source_file.stat().st_ino, public_file.stat().st_ino)
+                self.assertEqual(source_file.read_bytes(), b"video")
+
+
 if __name__ == "__main__":
     unittest.main()

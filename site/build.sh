@@ -3,7 +3,8 @@ set -e
 
 cd "$(dirname "$0")"
 
-# Сборка Hugo
+# Hardlinks из предыдущей сборки нельзя отдавать Hugo на перезапись.
+rm -rf public
 hugo --minify
 
 # Копируем CSS в папки авторов
@@ -15,5 +16,7 @@ for platform in public/sponsr public/boosty; do
         echo "CSS → $author"
     done
 done
+
+./deduplicate-assets.sh content public
 
 echo "Сборка завершена"
