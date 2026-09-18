@@ -1,0 +1,98 @@
+import os
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "site" / "deduplicate-assets.sh"
+
+
+class AssetHardlinkTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp_dir.name)
+        self.source = self.root / "backup"
+        self.public = self.root / "public"
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def make_pair(self, source_data=b"content", public_data=None):
+        relative = Path("boosty/author/posts/post/assets/file.mp4")
+        source_file = self.source / relative
+        public_file = self.public / relative
+        source_file.parent.mkdir(parents=True, exist_ok=True)
+        public_file.parent.mkdir(parents=True, exist_ok=True)
+        source_file.write_bytes(source_data)
+        public_file.write_bytes(source_data if public_data is None else public_data)
+        return source_file, public_file
+
+    def run_script(self, env=None):
+        return subprocess.run(
+            ["bash", str(SCRIPT), str(self.source), str(self.public)],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+    def test_identical_asset_is_replaced_with_hardlink(self):
+        source_file, public_file = self.make_pair()
+
+        result = self.run_script()
+
+        self.assertEqual(source_file.stat().st_ino, public_file.stat().st_ino)
+        self.assertEqual(source_file.read_bytes(), b"content")
+        self.assertIn("Связано файлов: 1", result.stdout)
+        self.assertIn("Сэкономлено байт: 7", result.stdout)
+
+    def test_different_public_file_is_preserved(self):
+        source_file, public_file = self.make_pair(public_data=b"transformed")
+        old_inode = public_file.stat().st_ino
+
+        result = self.run_script()
+
+        self.assertEqual(public_file.stat().st_ino, old_inode)
+        self.assertNotEqual(source_file.stat().st_ino, public_file.stat().st_ino)
+        self.assertEqual(public_file.read_bytes(), b"transformed")
+        self.assertIn("Пропущено файлов: 1", result.stdout)
+
+    def test_link_failure_keeps_public_copy(self):
+        source_file, public_file = self.make_pair()
+        fake_bin = self.root / "bin"
+        fake_bin.mkdir()
+        fake_ln = fake_bin / "ln"
+        fake_ln.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        fake_ln.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = f"{fake_bin}:{env['PATH']}"
+
+        result = self.run_script(env)
+
+        self.assertNotEqual(source_file.stat().st_ino, public_file.stat().st_ino)
+        self.assertEqual(public_file.read_bytes(), b"content")
+        self.assertIn("Пропущено файлов: 1", result.stdout)
+
+    def test_symlinked_public_parent_outside_root_is_not_modified(self):
+        relative = Path("boosty/author/posts/post/assets/file.mp4")
+        source_file = self.source / relative
+        source_file.parent.mkdir(parents=True)
+        source_file.write_bytes(b"source")
+
+        outside = self.root / "outside"
+        outside_target = outside / "author/posts/post/assets/file.mp4"
+        outside_target.parent.mkdir(parents=True)
+        outside_target.write_bytes(b"source")
+        self.public.mkdir()
+        (self.public / "boosty").symlink_to(outside, target_is_directory=True)
+
+        self.run_script()
+
+        self.assertEqual(outside_target.read_bytes(), b"source")
+        self.assertNotEqual(source_file.stat().st_ino, outside_target.stat().st_ino)
+
+
+if __name__ == "__main__":
+    unittest.main()
